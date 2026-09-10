@@ -9,5 +9,6 @@
     "@99tr6ynprt-collab"
   ],
   "config_flow": true,
-  "iot_class": "local_polling"
+  "integration_type": "service",
+  "iot_class": "calculated"
 }
