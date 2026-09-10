@@ -1,0 +1,8 @@
+title: LAKIS SOLARWORLD
+views:
+  - title: Energie
+    path: energie
+    icon: mdi:solar-power
+    cards:
+      - type: custom:lakis-solarworld-dashboard
+        entry_id: REPLACE_WITH_CONFIG_ENTRY_ID

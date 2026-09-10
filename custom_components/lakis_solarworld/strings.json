@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "LAKIS SOLARWORLD Pro aktivieren",
+        "description": "Geben Sie den von LAKIS SOLARWORLD bereitgestellten lebenslangen Pro-Lizenzschlüssel ein. Alle Module und Funktionen sind enthalten.",
+        "data": {
+          "license_key": "Lizenzschlüssel",
+          "modules": "Module"
+        }
+      },
+      "energy": {"title": "Energie / Haus", "data": {"energy_power": "Energie-Leistung", "house_power": "Hausverbrauch"}},
+      "pv": {"title": "PV", "data": {"pv_power": "PV-Leistung"}},
+      "grid": {"title": "Netz", "data": {"grid_power": "Netzleistung"}},
+      "battery": {"title": "Batterie", "data": {"battery_soc": "Batterie SOC", "battery_power": "Batterieleistung", "battery_capacity_kwh": "Kapazität (kWh)", "battery_target_soc": "Ziel-SOC (%)"}},
+      "wallbox": {"title": "Wallbox", "data": {"wallbox_power": "Ladeleistung", "wallbox_status": "Status", "wallbox_start_service": "Start-Service", "wallbox_stop_service": "Stop-Service"}},
+      "vehicle": {"title": "Fahrzeug", "data": {"vehicle_name": "Fahrzeugname", "vehicle_soc": "Fahrzeug SOC", "vehicle_target_soc": "Ziel-SOC (%)", "vehicle_status": "Status"}},
+      "heatpump": {"title": "Wärmepumpe", "data": {"heatpump_entity": "Wärmepumpe", "heatpump_power": "Elektrische Leistung", "heatpump_flow_temp": "Vorlauf", "heatpump_return_temp": "Rücklauf", "heatpump_outdoor_temp": "Außen", "heatpump_dhw_temp": "Warmwasser"}},
+      "climate": {"title": "Klimaanlagen", "data": {"climate_entities": "Klimageräte"}},
+      "init": {"title": "LAKIS SOLARWORLD Einstellungen", "data": {"modules": "Aktive Module"}}
+    },
+    "error": {"invalid_license": "Der Lizenzschlüssel ist ungültig oder gehört nicht zu LAKIS SOLARWORLD Pro."},
+    "abort": {"already_configured": "Diese LAKIS Lizenz ist auf diesem Home-Assistant-System bereits eingerichtet."}
+  }
+}
