@@ -5,6 +5,10 @@
   "documentation": "https://github.com/99tr6ynprt-collab/lakis-solarworld-dashboard",
   "issue_tracker": "https://github.com/99tr6ynprt-collab/lakis-solarworld-dashboard/issues",
   "requirements": [],
+  "dependencies": [
+  "http",
+  "websocket"
+],
   "codeowners": [
     "@99tr6ynprt-collab"
   ],
