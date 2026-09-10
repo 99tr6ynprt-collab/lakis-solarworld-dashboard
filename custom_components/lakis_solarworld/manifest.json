@@ -11,8 +11,8 @@
   ],
   "documentation": "https://github.com/99tr6ynprt-collab/lakis-solarworld-dashboard",
   "integration_type": "service",
-  "issue_tracker": "https://github.com/99tr6ynprt-collab/lakis-solarworld-dashboard/issues",
   "iot_class": "calculated",
+  "issue_tracker": "https://github.com/99tr6ynprt-collab/lakis-solarworld-dashboard/issues",
   "requirements": [],
   "version": "1.0.0"
 }
