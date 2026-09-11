@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.1.2
+ * Version 1.1.3
  *
  * Design:
  * - black / near-black background
@@ -390,7 +390,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .energy-icon { font-size: 28px; margin-bottom: 7px; }
         .energy-name { color: #ffffff; font-size: 12px; margin-bottom: 4px; }
-        .energy-value { font-size: 20px; font-weight: 800; color: #ffffff; text-shadow: 0 0 8px rgba(255,255,255,.12); }
+        .energy-value { font-size: 20px; font-weight: 800; color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
 
         .pv {
           border-color: rgba(45,230,130,.7);
@@ -432,7 +432,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .side-icon { font-size: 30px; }
         .side-name { color: #ffffff; font-size: 12px; }
-        .side-value { font-size: 21px; font-weight: 800; margin-top: 4px; color: #ffffff; text-shadow: 0 0 8px rgba(255,255,255,.10); }
+        .side-value { font-size: 21px; font-weight: 800; margin-top: 4px; color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
 
         .summary {
           position: relative;
@@ -1318,7 +1318,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.1.2
+        · Version 1.1.3
       </div>
     `;
   }
