@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.1.3
+ * Version 1.1.4
  *
  * Design:
  * - black / near-black background
@@ -20,6 +20,9 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._loading = true;
     this._message = "";
     this._rendered = false;
+    this._saveTimer = null;
+    this._saveInFlight = false;
+    this._dirty = false;
   }
 
   set hass(value) {
@@ -390,7 +393,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .energy-icon { font-size: 28px; margin-bottom: 7px; }
         .energy-name { color: #ffffff; font-size: 12px; margin-bottom: 4px; }
-        .energy-value { font-size: 20px; font-weight: 800; color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
+        .energy-value { font-size: 20px; font-weight: 800; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
 
         .pv {
           border-color: rgba(45,230,130,.7);
@@ -432,7 +435,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .side-icon { font-size: 30px; }
         .side-name { color: #ffffff; font-size: 12px; }
-        .side-value { font-size: 21px; font-weight: 800; margin-top: 4px; color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
+        .side-value { font-size: 21px; font-weight: 800; margin-top: 4px; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
 
         .summary {
           position: relative;
@@ -1145,7 +1148,10 @@ class LakisSolarworldDashboard extends HTMLElement {
 
   _attachEvents() {
     this.querySelectorAll("[data-tab]").forEach((button) => {
-      button.addEventListener("click", () => {
+      button.addEventListener("click", async () => {
+        if (this._tab === "settings" && this._dirty) {
+          await this._save(true);
+        }
         this._tab = button.dataset.tab;
         this._message = "";
         this._render();
@@ -1156,6 +1162,8 @@ class LakisSolarworldDashboard extends HTMLElement {
       checkbox.addEventListener("change", () => {
         this._config.modules ||= {};
         this._config.modules[checkbox.dataset.module] = checkbox.checked;
+        this._dirty = true;
+        this._scheduleSave();
 
         // Module can change which settings are visible, so a deliberate
         // rerender here is safe; entity <select> controls are not involved.
@@ -1167,6 +1175,8 @@ class LakisSolarworldDashboard extends HTMLElement {
       select.addEventListener("change", (event) => {
         this._config[event.currentTarget.dataset.entityKey] =
           event.currentTarget.value;
+        this._dirty = true;
+        this._scheduleSave();
       });
     });
 
@@ -1174,12 +1184,14 @@ class LakisSolarworldDashboard extends HTMLElement {
       input.addEventListener("input", (event) => {
         this._config[event.currentTarget.dataset.textKey] =
           event.currentTarget.value;
+        this._dirty = true;
+        this._scheduleSave();
       });
     });
 
     const save = this.querySelector("#save-config");
     if (save) {
-      save.addEventListener("click", () => this._save());
+      save.addEventListener("click", () => this._save(false));
     }
 
     const vehicleImage = this.querySelector("#vehicle-image");
@@ -1205,12 +1217,24 @@ class LakisSolarworldDashboard extends HTMLElement {
     });
   }
 
-  async _save() {
+  _scheduleSave() {
+    if (this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      this._save(true);
+    }, 350);
+  }
+
+  async _save(silent = false) {
     if (!this._hass || !this._entry) return;
 
     try {
-      this._message = "Speichere …";
-      this._render();
+      if (this._saveInFlight) return;
+      this._saveInFlight = true;
+      if (!silent) {
+        this._message = "Speichere …";
+        this._render();
+      }
 
       const result = await this._hass.callWS({
         type: "lakis_solarworld/save_config",
@@ -1219,16 +1243,20 @@ class LakisSolarworldDashboard extends HTMLElement {
       });
 
       this._config = result?.config || this._config;
-      this._message = "✓ Änderungen gespeichert.";
-
-      // Stay on settings. Do not trigger an unnecessary reload.
-      this._render();
+      this._dirty = false;
+      if (!silent) {
+        this._message = "✓ Änderungen gespeichert.";
+        // Stay on settings. Do not trigger an unnecessary reload.
+        this._render();
+      }
     } catch (err) {
       console.error("LAKIS SOLARWORLD save:", err);
       this._message =
         "Fehler beim Speichern: " +
         (err?.message || "Unbekannter Fehler");
       this._render();
+    } finally {
+      this._saveInFlight = false;
     }
   }
 
@@ -1318,7 +1346,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.1.3
+        · Version 1.1.4
       </div>
     `;
   }
