@@ -28,7 +28,8 @@ PLATFORMS: list[str] = []
 # Config entry data
 # ---------------------------------------------------------------------------
 
-# These values belong to the installation/license and remain in entry.data.
+# Permanent installation / license data stays in entry.data.
+# Mutable dashboard configuration is stored in entry.options.
 LICENSE_DATA_KEYS = {
     "license_key",
     "license_id",
@@ -56,16 +57,21 @@ async def async_setup(
     config: dict,
 ) -> bool:
     """Set up LAKIS SOLARWORLD."""
+
     hass.data.setdefault(DOMAIN, {})
 
     static_dir = Path(__file__).parent / "frontend"
 
+    # Do not cache the frontend JavaScript.
+    #
+    # This is intentional while the dashboard is under active development
+    # and prevents browsers from continuing to use an older JS version.
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
                 "/api/lakis_solarworld/static",
                 str(static_dir),
-                True,
+                False,
             )
         ]
     )
@@ -87,24 +93,33 @@ async def async_setup_entry(
 
     # Register the native Home Assistant sidebar panel.
     if not hass.data[DOMAIN].get("panel_registered"):
+
         await panel_custom.async_register_panel(
             hass,
             webcomponent_name="lakis-solarworld-panel",
             frontend_url_path="lakis-solarworld",
+
+            # Cache-busting query parameter.
+            # This forces Home Assistant/iPad to load
+            # the current dashboard JavaScript.
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js"
+                "lakis-dashboard.js?v=1002"
             ),
+
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
             require_admin=False,
+
             config={
                 "entry_id": entry.entry_id,
             },
+
             config_panel_domain=DOMAIN,
         )
 
         hass.data[DOMAIN]["panel_registered"] = True
+
         hass.data[DOMAIN]["panel_entry_id"] = (
             entry.entry_id
         )
@@ -129,6 +144,7 @@ async def async_unload_entry(
         )
         == entry.entry_id
     ):
+
         frontend.async_remove_panel(
             hass,
             "lakis-solarworld",
@@ -157,41 +173,55 @@ async def async_migrate_entry(
 ) -> bool:
     """Migrate an older LAKIS SOLARWORLD config entry."""
 
-    new_data = dict(config_entry.data)
-    new_options = dict(config_entry.options)
+    new_data = dict(
+        config_entry.data
+    )
 
-    # Older LAKIS versions stored dashboard configuration
-    # directly in entry.data.
+    new_options = dict(
+        config_entry.options
+    )
+
+    # Older LAKIS versions stored dashboard
+    # configuration directly inside entry.data.
     #
     # New architecture:
-    #   entry.data    = license / installation data
-    #   entry.options = mutable dashboard configuration
+    #
+    #   entry.data
+    #       -> license / installation data
+    #
+    #   entry.options
+    #       -> mutable dashboard configuration
 
     for key in list(new_data):
+
         if key in LICENSE_DATA_KEYS:
             continue
 
-        # Do not overwrite an option that already exists.
         new_options.setdefault(
             key,
             new_data[key],
         )
 
-        new_data.pop(key, None)
+        new_data.pop(
+            key,
+            None,
+        )
 
-    # Explicitly preserve the old module configuration.
+    # Explicitly preserve the old module list.
     if "modules" in config_entry.data:
+
         new_options.setdefault(
             "modules",
             config_entry.data["modules"],
         )
 
-    # Only update if necessary.
+    # Only update when something actually changed.
     if (
         config_entry.version != 3
         or dict(config_entry.data) != new_data
         or dict(config_entry.options) != new_options
     ):
+
         hass.config_entries.async_update_entry(
             config_entry,
             data=new_data,
@@ -216,7 +246,10 @@ def _get_entry(
         entry_id,
     )
 
-    if not entry or entry.domain != DOMAIN:
+    if (
+        not entry
+        or entry.domain != DOMAIN
+    ):
         raise HomeAssistantError(
             "Invalid LAKIS SOLARWORLD config entry"
         )
@@ -236,6 +269,7 @@ def _split_config(
     options: dict[str, Any] = {}
 
     for key, value in config.items():
+
         if key in LICENSE_DATA_KEYS:
             data[key] = value
         else:
@@ -317,9 +351,14 @@ def _register_websocket(
             new_config
         )
 
-        # Never remove existing license information.
-        merged_data = dict(entry.data)
-        merged_data.update(new_data)
+        # Preserve existing license information.
+        merged_data = dict(
+            entry.data
+        )
+
+        merged_data.update(
+            new_data
+        )
 
         hass.config_entries.async_update_entry(
             entry,
@@ -350,7 +389,8 @@ def _register_websocket(
     @websocket_api.websocket_command(
         {
             vol.Required("type"): (
-                "lakis_solarworld/suggest_entities"
+                "lakis_solarworld/"
+                "suggest_entities"
             ),
         }
     )
@@ -397,18 +437,25 @@ def _register_websocket(
 
         raw = msg["data"]
 
+        # Support both plain base64 and
+        # data URLs such as data:image/jpeg;base64,...
         if "," in raw:
-            raw = raw.split(",", 1)[1]
+            raw = raw.split(
+                ",",
+                1,
+            )[1]
 
         try:
             data = base64.b64decode(
                 raw,
                 validate=True,
             )
+
         except (
             binascii.Error,
             ValueError,
         ) as err:
+
             raise HomeAssistantError(
                 "Invalid image data"
             ) from err
@@ -423,20 +470,24 @@ def _register_websocket(
         if data.startswith(
             b"\xff\xd8\xff"
         ):
+
             extension = ".jpg"
 
         elif data.startswith(
             b"\x89PNG\r\n\x1a\n"
         ):
+
             extension = ".png"
 
         elif (
             data.startswith(b"RIFF")
             and b"WEBP" in data[:16]
         ):
+
             extension = ".webp"
 
         else:
+
             raise HomeAssistantError(
                 "Only JPEG, PNG or WebP images are supported"
             )
@@ -496,7 +547,10 @@ def _register_websocket(
             },
         )
 
-    # Register all WebSocket commands.
+    # -----------------------------------------------------------------------
+    # Register commands
+    # -----------------------------------------------------------------------
+
     websocket_api.async_register_command(
         hass,
         get_config,
@@ -541,7 +595,10 @@ def suggest_entities(
     }
 
     for state in states:
-        entity_id = state.entity_id.lower()
+
+        entity_id = (
+            state.entity_id.lower()
+        )
 
         attributes = state.attributes
 
@@ -568,13 +625,16 @@ def suggest_entities(
         if state.entity_id.startswith(
             "weather."
         ):
-            result["weather"].append(
+
+            result[
+                "weather"
+            ].append(
                 state.entity_id
             )
 
-        # Automatic suggestions are intentionally
-        # limited to clearly identifiable
-        # Sigen / Sigenergy entities.
+        # Automatic suggestions are limited
+        # to clearly identifiable Sigen/Sigenergy
+        # entities.
         if not any(
             value in text
             for value in (
@@ -584,15 +644,21 @@ def suggest_entities(
         ):
             continue
 
-        # PV.
+        # PV power.
         if (
             "pv" in text
             and (
                 "power" in text
-                or unit in ("w", "kw")
+                or unit in (
+                    "w",
+                    "kw",
+                )
             )
         ):
-            result["pv_power"].append(
+
+            result[
+                "pv_power"
+            ].append(
                 state.entity_id
             )
 
@@ -603,18 +669,30 @@ def suggest_entities(
                 or "house" in text
                 or "home" in text
             )
-            and unit in ("w", "kw")
+            and unit in (
+                "w",
+                "kw",
+            )
         ):
-            result["house_power"].append(
+
+            result[
+                "house_power"
+            ].append(
                 state.entity_id
             )
 
         # Grid.
         if (
             "grid" in text
-            and unit in ("w", "kw")
+            and unit in (
+                "w",
+                "kw",
+            )
         ):
-            result["grid_power"].append(
+
+            result[
+                "grid_power"
+            ].append(
                 state.entity_id
             )
 
@@ -624,9 +702,15 @@ def suggest_entities(
                 "battery" in text
                 or "ess" in text
             )
-            and unit in ("w", "kw")
+            and unit in (
+                "w",
+                "kw",
+            )
         ):
-            result["battery_power"].append(
+
+            result[
+                "battery_power"
+            ].append(
                 state.entity_id
             )
 
@@ -638,7 +722,10 @@ def suggest_entities(
             )
             and unit == "%"
         ):
-            result["battery_soc"].append(
+
+            result[
+                "battery_soc"
+            ].append(
                 state.entity_id
             )
 
@@ -648,9 +735,15 @@ def suggest_entities(
                 "charger" in text
                 or "wallbox" in text
             )
-            and unit in ("w", "kw")
+            and unit in (
+                "w",
+                "kw",
+            )
         ):
-            result["wallbox_power"].append(
+
+            result[
+                "wallbox_power"
+            ].append(
                 state.entity_id
             )
 
@@ -660,9 +753,15 @@ def suggest_entities(
                 "charger" in text
                 or "wallbox" in text
             )
-            and unit not in ("w", "kw")
+            and unit not in (
+                "w",
+                "kw",
+            )
         ):
-            result["wallbox_status"].append(
+
+            result[
+                "wallbox_status"
+            ].append(
                 state.entity_id
             )
 
