@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.3.0
+ * Version 1.4.0
  *
  * Design:
  * - black / near-black background
@@ -226,9 +226,23 @@ class LakisSolarworldDashboard extends HTMLElement {
     return url ? `style="background-image:linear-gradient(120deg,rgba(0,0,0,.82),rgba(0,8,15,.48)),url('${this._escape(url)}');background-size:cover;background-position:center;"` : "";
   }
 
+  _defaultBackground(tab) {
+    const defaults = {
+      pv: "/api/lakis_solarworld/static/defaults/pv.jpg",
+      battery: "/api/lakis_solarworld/static/defaults/battery.jpg",
+      wallbox: "/api/lakis_solarworld/static/defaults/wallbox.jpg",
+      heatpump: "/api/lakis_solarworld/static/defaults/heatpump.jpg",
+      climate: "/api/lakis_solarworld/static/defaults/climate.jpg",
+    };
+    return defaults[tab] || "";
+  }
+
   _backgroundFor(tab = this._tab) {
-    const url = this._config.backgrounds?.[tab] || "";
-    return url;
+    return this._config.backgrounds?.[tab] || this._defaultBackground(tab);
+  }
+
+  _hasCustomBackground(tab) {
+    return Boolean(this._config.backgrounds?.[tab]);
   }
 
   _render() {
@@ -466,6 +480,9 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .energy-icon { width:42px; height:42px; display:flex; align-items:center; justify-content:center; margin-bottom:7px; color:#fff; }
         .energy-icon svg { width:100%; height:100%; }
+        .visual-node { overflow:hidden; position:relative; }
+        .visual-node::before { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.68),rgba(0,0,0,.34)),var(--tile-bg) center/cover no-repeat; opacity:.9; z-index:0; }
+        .visual-node > * { position:relative; z-index:1; }
         .energy-name { color: #ffffff; font-size: 12px; margin-bottom: 4px; }
         .energy-value { font-size: 20px; font-weight: 800; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
 
@@ -515,14 +532,14 @@ class LakisSolarworldDashboard extends HTMLElement {
           background-image: var(--tile-bg);
           background-size: cover;
           background-position: center;
-          opacity: .46;
+          opacity: .58;
           filter: saturate(1.05);
         }
         .side-card::after, .visual-tile::after {
           content: "";
           position: absolute;
           inset: 0;
-          background: linear-gradient(90deg,rgba(0,0,0,.78),rgba(0,0,0,.48));
+          background: linear-gradient(90deg,rgba(0,0,0,.62),rgba(0,0,0,.30));
         }
         .side-card > *, .visual-tile > * { position: relative; z-index: 2; }
         .overview-shell {
@@ -577,7 +594,22 @@ class LakisSolarworldDashboard extends HTMLElement {
         .tile-meta { color:#d7e6ef; font-size:11px; margin-top:3px; }
         .overview-note { color:#b9cbd6; font-size:11px; margin-top:10px; }
         .flow-card { position:relative; overflow:hidden; }
-        .flow-card::after { content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 50% 50%,rgba(0,160,255,.06),transparent 55%); }
+        .flow-card::before {
+          content:"";
+          position:absolute;
+          width:min(62%,560px);
+          aspect-ratio:2 / 1;
+          left:50%;
+          top:53%;
+          transform:translate(-50%,-50%);
+          background:url("/api/lakis_solarworld/static/lakis_logo_transparent.png") center/contain no-repeat;
+          opacity:.12;
+          filter:drop-shadow(0 0 24px rgba(94,67,255,.35));
+          pointer-events:none;
+          z-index:0;
+        }
+        .flow-card::after { content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 50% 50%,rgba(0,160,255,.08),transparent 55%); z-index:1; }
+        .flow-card > * { position:relative; z-index:2; }
         .flow-card > * { position:relative; z-index:2; }
 
         .side-icon { font-size: 30px; }
@@ -979,7 +1011,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         <div class="brand">
           <img
             class="brand-logo"
-            src="/api/lakis_solarworld/static/customer_logo.jpeg"
+            src="/api/lakis_solarworld/static/lakis_logo_transparent.png"
             alt="LAKIS SOLARWORLD"
           />
           <div>
@@ -1092,12 +1124,12 @@ class LakisSolarworldDashboard extends HTMLElement {
             <div class="section-title">${this._icon("bolt",22)} <span>Aktueller Energiefluss</span></div>
             <div class="flow">
               ${this._renderFlowArrows(pv, grid, battery, wallbox)}
-              <div class="energy-node pv pv-node">
+              <div class="energy-node pv pv-node visual-node" style="--tile-bg:url('${this._escape(this._backgroundFor("pv"))}')">
                 <div class="energy-icon">${this._icon("solar",40)}</div>
                 <div class="energy-name">PV</div>
                 <div class="energy-value">${this._formatPower(pv)}</div>
               </div>
-              <div class="energy-node grid grid-node">
+              <div class="energy-node grid grid-node visual-node" style="--tile-bg:url('${this._escape(this._backgroundFor("grid"))}')">
                 <div class="energy-icon">${this._icon("grid",40)}</div>
                 <div class="energy-name">Netz</div>
                 <div class="energy-value">${this._formatPower(grid)}</div>
@@ -1108,13 +1140,13 @@ class LakisSolarworldDashboard extends HTMLElement {
                 <div class="energy-value">${this._formatPower(house)}</div>
                 <div class="energy-name">Verbrauch</div>
               </div>
-              <div class="energy-node battery battery-node">
+              <div class="energy-node battery battery-node visual-node" style="--tile-bg:url('${this._escape(this._backgroundFor("battery"))}')">
                 <div class="energy-icon">${this._icon("battery",40)}</div>
                 <div class="energy-name">Batterie</div>
                 <div class="energy-value">${this._formatPercent(soc)}</div>
                 <div class="energy-name">${this._formatPower(battery)} · ${batteryLabel}</div>
               </div>
-              <div class="energy-node wallbox-node">
+              <div class="energy-node wallbox-node visual-node" style="--tile-bg:url('${this._escape(this._backgroundFor("wallbox"))}')">
                 <div class="energy-icon">${this._icon("car",40)}</div>
                 <div class="energy-name">Wallbox</div>
                 <div class="energy-value">${this._enabled("wallbox") ? this._formatPower(wallbox) : "deaktiviert"}</div>
@@ -1310,10 +1342,9 @@ class LakisSolarworldDashboard extends HTMLElement {
     const power = this._number(this._entity("vehicle_charging_power"));
     const soc = this._number(this._entity("vehicle_soc"));
     const status = this._state(this._entity("vehicle_status"));
-    const image = this._config.vehicle_image || "";
     return `
       <div class="detail-page">
-        <div class="detail-hero" ${image ? `style="background-image:linear-gradient(120deg,rgba(0,0,0,.82),rgba(0,8,15,.55)),url('${this._escape(image)}');background-size:cover;background-position:center;"` : this._detailStyle("vehicle")}>
+        <div class="detail-hero" ${this._detailStyle("wallbox")}>
           <div>
             <div class="detail-icon">${this._icon("car",76)}</div>
             <div class="detail-title">${this._escape(this._config.vehicle_name || "Fahrzeug")}</div>
@@ -1407,7 +1438,6 @@ class LakisSolarworldDashboard extends HTMLElement {
               ${this._entitySelect("vehicle_soc", "Fahrzeug SOC", ["sensor"], "Fahrzeug-Ladezustand.")}
               ${this._entitySelect("vehicle_status", "Fahrzeug Status", ["sensor","binary_sensor"], "Optional.")}
               ${this._entitySelect("vehicle_charging_power", "Fahrzeug Ladeleistung", ["sensor"], "Optional.")}
-              ${this._vehicleImageSection()}
             ` : ""}
           </div>
         ` : ""}
@@ -1443,7 +1473,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         <div class="settings-card full">
           <h3>🖼️ Dashboard-Hintergründe</h3>
-          <p>Jeder Menüpunkt kann ein eigenes Hintergrundbild erhalten.</p>
+          <p>Die Kacheln und Detailseiten verwenden automatisch ein professionelles Standardbild. Ein eigenes Bild ersetzt das Standardbild sofort; „Standardbild“ stellt es wieder her.</p>
           <div class="background-grid">
             ${this._backgroundItem("overview", "Übersicht")}
             ${this._backgroundItem("pv", "PV")}
@@ -1451,7 +1481,6 @@ class LakisSolarworldDashboard extends HTMLElement {
             ${this._backgroundItem("battery", "Batterie")}
             ${this._backgroundItem("wallbox", "Wallbox")}
             ${this._backgroundItem("heatpump", "Wärmepumpe")}
-            ${this._backgroundItem("vehicle", "Fahrzeug")}
             ${this._backgroundItem("climate", "Klimaanlagen")}
             ${this._backgroundItem("settings", "Einstellungen")}
           </div>
@@ -1480,26 +1509,15 @@ class LakisSolarworldDashboard extends HTMLElement {
     `;
   }
 
-  _vehicleImageSection() {
-    const image = this._config.vehicle_image || "";
-    return `
-      <div class="entity-setting">
-        <label>Fahrzeugbild</label>
-        ${image ? `<img src="${this._escape(image)}" style="width:100%;max-height:180px;object-fit:cover;border-radius:12px;margin-bottom:10px;" alt="Fahrzeug">` : ""}
-        <label class="button">
-          Fahrzeugbild auswählen
-          <input class="upload-input" id="vehicle-image" type="file" accept="image/*">
-        </label>
-      </div>
-    `;
-  }
-
   _backgroundItem(screen, label) {
-    const url = this._config.backgrounds?.[screen] || "";
+    const custom = this._config.backgrounds?.[screen] || "";
+    const url = custom || this._defaultBackground(screen);
+    const status = custom ? "Eigenes Bild" : (url ? "Standardbild" : "Kein Standardbild");
 
     return `
       <div class="background-item">
         <strong>${this._escape(label)}</strong>
+        <div class="setting-description">${status}</div>
 
         <div
           class="background-preview"
@@ -1521,7 +1539,7 @@ class LakisSolarworldDashboard extends HTMLElement {
             class="button"
             data-reset-background="${this._escape(screen)}"
             type="button"
-          >Zurücksetzen</button>
+          >Standardbild</button>
         </div>
       </div>
     `;
@@ -1586,13 +1604,6 @@ class LakisSolarworldDashboard extends HTMLElement {
       save.addEventListener("click", () => this._save(false));
     }
 
-    const vehicleImage = this.querySelector("#vehicle-image");
-    if (vehicleImage) {
-      vehicleImage.addEventListener("change", (event) => {
-        this._uploadVehicleImage(event.target.files?.[0]);
-      });
-    }
-
     this.querySelectorAll("[data-background-input]").forEach((input) => {
       input.addEventListener("change", (event) => {
         this._uploadBackground(
@@ -1653,36 +1664,6 @@ class LakisSolarworldDashboard extends HTMLElement {
     }
   }
 
-  async _uploadVehicleImage(file) {
-    if (!file || !this._hass || !this._entry) return;
-
-    const reader = new FileReader();
-
-    reader.onload = async () => {
-      try {
-        const result = await this._hass.callWS({
-          type: "lakis_solarworld/upload_vehicle_image",
-          entry_id: this._entry,
-          filename: file.name,
-          data: reader.result,
-        });
-
-        if (result?.url) {
-          this._config.vehicle_image = result.url;
-        }
-
-        this._message = "✓ Fahrzeugbild gespeichert.";
-        this._render();
-      } catch (err) {
-        console.error("LAKIS vehicle image:", err);
-        this._message = "Fahrzeugbild konnte nicht gespeichert werden.";
-        this._render();
-      }
-    };
-
-    reader.readAsDataURL(file);
-  }
-
   async _uploadBackground(screen, file) {
     if (!file || !this._hass || !this._entry) return;
 
@@ -1739,7 +1720,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.3.0
+        · Version 1.4.0
       </div>
     `;
   }
