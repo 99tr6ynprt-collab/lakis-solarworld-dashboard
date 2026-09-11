@@ -261,6 +261,27 @@ class LakisSolarworldDashboard extends HTMLElement {
         :host {
           display: block;
           min-height: 100vh;
+          width: 100%;
+        }
+
+        /* Kiosk: make the dashboard host itself occupy the complete viewport.
+           Hiding ha-sidebar alone does not reclaim the layout column on iPad/HA. */
+        :host(.kiosk) {
+          position: fixed !important;
+          inset: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          min-width: 100vw !important;
+          min-height: 100vh !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          z-index: 99999 !important;
+        }
+
+        :host(.kiosk) .app {
+          width: 100vw;
+          min-width: 100vw;
+          min-height: 100vh;
           color: #f4f8fc;
           font-family:
             -apple-system,
@@ -276,7 +297,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .app {
           min-height: 100vh;
-          width: 100vw;
+          width: 100%;
           padding: 24px;
           position: relative;
           overflow: hidden;
@@ -1711,12 +1732,14 @@ class LakisSolarworldDashboard extends HTMLElement {
 
   _enterKioskMode() {
     this._kioskMode = true;
+    this.classList.add('kiosk');
     this._setHASidebarHidden(true);
     this._updateKioskButton();
   }
 
   _exitKioskMode() {
     this._kioskMode = false;
+    this.classList.remove('kiosk');
     this._setHASidebarHidden(false);
     this._updateKioskButton();
   }
