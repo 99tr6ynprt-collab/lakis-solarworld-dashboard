@@ -1563,9 +1563,9 @@ class LakisSolarworldDashboard extends HTMLElement {
   }
 }
 
-if (!customElements.get("lakis-solarworld-dashboard")) {
+if (!customElements.get("lakis-solarworld-panel")) {
   customElements.define(
-    "lakis-solarworld-dashboard",
+    "lakis-solarworld-panel",
     LakisSolarworldDashboard
   );
 }
