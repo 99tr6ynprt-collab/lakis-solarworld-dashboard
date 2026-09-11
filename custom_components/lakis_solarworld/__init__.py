@@ -7,19 +7,28 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components import frontend, panel_custom, websocket_api
+from homeassistant.components import (
+    frontend,
+    panel_custom,
+    websocket_api,
+)
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
+
 DOMAIN = "lakis_solarworld"
 
 PLATFORMS: list[str] = []
 
-# These values belong to the license / installation itself.
-# All other configurable dashboard values are stored in entry.options.
+
+# ---------------------------------------------------------------------------
+# Config entry data
+# ---------------------------------------------------------------------------
+
+# These values belong to the installation/license and remain in entry.data.
 LICENSE_DATA_KEYS = {
     "license_key",
     "license_id",
@@ -29,11 +38,24 @@ LICENSE_DATA_KEYS = {
 }
 
 
+def _get_combined_config(
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    """Return license data and dashboard options as one configuration."""
+    config = dict(entry.data)
+    config.update(entry.options)
+    return config
+
+
+# ---------------------------------------------------------------------------
+# Integration setup
+# ---------------------------------------------------------------------------
+
 async def async_setup(
     hass: HomeAssistant,
     config: dict,
 ) -> bool:
-    """Set up the LAKIS SOLARWORLD integration."""
+    """Set up LAKIS SOLARWORLD."""
     hass.data.setdefault(DOMAIN, {})
 
     static_dir = Path(__file__).parent / "frontend"
@@ -53,26 +75,17 @@ async def async_setup(
     return True
 
 
-def _get_combined_config(
-    entry: ConfigEntry,
-) -> dict[str, Any]:
-    """Return license data and current dashboard options."""
-    config = dict(entry.data)
-    config.update(entry.options)
-    return config
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> bool:
     """Set up a LAKIS SOLARWORLD config entry."""
+
     hass.data.setdefault(DOMAIN, {})[
         entry.entry_id
     ] = _get_combined_config(entry)
 
-    # Register the native sidebar panel.
-    # No manual Lovelace resource is required.
+    # Register the native Home Assistant sidebar panel.
     if not hass.data[DOMAIN].get("panel_registered"):
         await panel_custom.async_register_panel(
             hass,
@@ -104,6 +117,7 @@ async def async_unload_entry(
     entry: ConfigEntry,
 ) -> bool:
     """Unload a LAKIS SOLARWORLD config entry."""
+
     hass.data.get(DOMAIN, {}).pop(
         entry.entry_id,
         None,
@@ -133,13 +147,73 @@ async def async_unload_entry(
     return True
 
 
+# ---------------------------------------------------------------------------
+# Config entry migration
+# ---------------------------------------------------------------------------
+
+async def async_migrate_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+) -> bool:
+    """Migrate an older LAKIS SOLARWORLD config entry."""
+
+    new_data = dict(config_entry.data)
+    new_options = dict(config_entry.options)
+
+    # Older LAKIS versions stored dashboard configuration
+    # directly in entry.data.
+    #
+    # New architecture:
+    #   entry.data    = license / installation data
+    #   entry.options = mutable dashboard configuration
+
+    for key in list(new_data):
+        if key in LICENSE_DATA_KEYS:
+            continue
+
+        # Do not overwrite an option that already exists.
+        new_options.setdefault(
+            key,
+            new_data[key],
+        )
+
+        new_data.pop(key, None)
+
+    # Explicitly preserve the old module configuration.
+    if "modules" in config_entry.data:
+        new_options.setdefault(
+            "modules",
+            config_entry.data["modules"],
+        )
+
+    # Only update if necessary.
+    if (
+        config_entry.version != 3
+        or dict(config_entry.data) != new_data
+        or dict(config_entry.options) != new_options
+    ):
+        hass.config_entries.async_update_entry(
+            config_entry,
+            data=new_data,
+            options=new_options,
+            version=3,
+        )
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Config helper
+# ---------------------------------------------------------------------------
+
 def _get_entry(
     hass: HomeAssistant,
     entry_id: str,
 ) -> ConfigEntry:
     """Return and validate a LAKIS config entry."""
+
     entry = hass.config_entries.async_get_entry(
-        entry_id
+        entry_id,
     )
 
     if not entry or entry.domain != DOMAIN:
@@ -152,8 +226,12 @@ def _get_entry(
 
 def _split_config(
     config: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Split incoming configuration into data and options."""
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+]:
+    """Split frontend configuration into data and options."""
+
     data: dict[str, Any] = {}
     options: dict[str, Any] = {}
 
@@ -166,10 +244,18 @@ def _split_config(
     return data, options
 
 
+# ---------------------------------------------------------------------------
+# WebSocket API
+# ---------------------------------------------------------------------------
+
 def _register_websocket(
     hass: HomeAssistant,
 ) -> None:
     """Register LAKIS SOLARWORLD WebSocket commands."""
+
+    # -----------------------------------------------------------------------
+    # Get configuration
+    # -----------------------------------------------------------------------
 
     @websocket_api.websocket_command(
         {
@@ -186,6 +272,7 @@ def _register_websocket(
         msg: dict,
     ) -> None:
         """Return the current LAKIS configuration."""
+
         entry = _get_entry(
             hass,
             msg["entry_id"],
@@ -195,6 +282,10 @@ def _register_websocket(
             msg["id"],
             _get_combined_config(entry),
         )
+
+    # -----------------------------------------------------------------------
+    # Save configuration
+    # -----------------------------------------------------------------------
 
     @websocket_api.websocket_command(
         {
@@ -212,30 +303,33 @@ def _register_websocket(
         msg: dict,
     ) -> None:
         """Save LAKIS dashboard configuration."""
+
         entry = _get_entry(
             hass,
             msg["entry_id"],
         )
 
-        new_config = dict(msg["config"])
+        new_config = dict(
+            msg["config"]
+        )
 
         new_data, new_options = _split_config(
             new_config
         )
 
-        # Never remove existing license information
-        # when the frontend only saves dashboard settings.
+        # Never remove existing license information.
         merged_data = dict(entry.data)
         merged_data.update(new_data)
 
-        await hass.config_entries.async_update_entry(
+        hass.config_entries.async_update_entry(
             entry,
             data=merged_data,
             options=new_options,
         )
 
-        updated_config = dict(merged_data)
-        updated_config.update(new_options)
+        updated_config = _get_combined_config(
+            entry
+        )
 
         hass.data.setdefault(DOMAIN, {})[
             entry.entry_id
@@ -248,6 +342,10 @@ def _register_websocket(
                 "config": updated_config,
             },
         )
+
+    # -----------------------------------------------------------------------
+    # Entity suggestions
+    # -----------------------------------------------------------------------
 
     @websocket_api.websocket_command(
         {
@@ -262,16 +360,22 @@ def _register_websocket(
         connection: websocket_api.ActiveConnection,
         msg: dict,
     ) -> None:
-        """Suggest matching Home Assistant entities."""
+        """Return suggested Home Assistant entities."""
+
         connection.send_result(
             msg["id"],
             suggest_entities(hass),
         )
 
+    # -----------------------------------------------------------------------
+    # Vehicle image upload
+    # -----------------------------------------------------------------------
+
     @websocket_api.websocket_command(
         {
             vol.Required("type"): (
-                "lakis_solarworld/upload_vehicle_image"
+                "lakis_solarworld/"
+                "upload_vehicle_image"
             ),
             vol.Required("entry_id"): cv.string,
             vol.Required("filename"): cv.string,
@@ -285,6 +389,7 @@ def _register_websocket(
         msg: dict,
     ) -> None:
         """Upload and store a vehicle image."""
+
         entry = _get_entry(
             hass,
             msg["entry_id"],
@@ -300,29 +405,36 @@ def _register_websocket(
                 raw,
                 validate=True,
             )
-        except (binascii.Error, ValueError) as err:
+        except (
+            binascii.Error,
+            ValueError,
+        ) as err:
             raise HomeAssistantError(
                 "Invalid image data"
             ) from err
 
+        # Maximum 8 MB.
         if len(data) > 8 * 1024 * 1024:
             raise HomeAssistantError(
                 "Image is larger than 8 MB"
             )
 
-        if data.startswith(b"\xff\xd8\xff"):
-            ext = ".jpg"
+        # Detect supported image format.
+        if data.startswith(
+            b"\xff\xd8\xff"
+        ):
+            extension = ".jpg"
 
         elif data.startswith(
             b"\x89PNG\r\n\x1a\n"
         ):
-            ext = ".png"
+            extension = ".png"
 
         elif (
             data.startswith(b"RIFF")
             and b"WEBP" in data[:16]
         ):
-            ext = ".webp"
+            extension = ".webp"
 
         else:
             raise HomeAssistantError(
@@ -340,7 +452,10 @@ def _register_websocket(
             exist_ok=True,
         )
 
-        target = target_dir / f"vehicle{ext}"
+        target = (
+            target_dir
+            / f"vehicle{extension}"
+        )
 
         await hass.async_add_executor_job(
             target.write_bytes,
@@ -349,22 +464,25 @@ def _register_websocket(
 
         image_url = (
             "/local/lakis_solarworld/"
-            f"vehicles/vehicle{ext}"
+            f"vehicles/vehicle{extension}"
         )
 
-        new_options = dict(entry.options)
-        new_options["vehicle_image"] = image_url
+        new_options = dict(
+            entry.options
+        )
 
-        await hass.config_entries.async_update_entry(
+        new_options[
+            "vehicle_image"
+        ] = image_url
+
+        hass.config_entries.async_update_entry(
             entry,
             options=new_options,
         )
 
-        updated_config = _get_combined_config(entry)
-
-        # async_update_entry changes the ConfigEntry object,
-        # so rebuild the cached configuration afterwards.
-        updated_config["vehicle_image"] = image_url
+        updated_config = _get_combined_config(
+            entry
+        )
 
         hass.data.setdefault(DOMAIN, {})[
             entry.entry_id
@@ -378,6 +496,7 @@ def _register_websocket(
             },
         )
 
+    # Register all WebSocket commands.
     websocket_api.async_register_command(
         hass,
         get_config,
@@ -399,13 +518,18 @@ def _register_websocket(
     )
 
 
+# ---------------------------------------------------------------------------
+# Entity suggestions
+# ---------------------------------------------------------------------------
+
 def suggest_entities(
     hass: HomeAssistant,
-) -> dict:
-    """Suggest Home Assistant entities for LAKIS."""
+) -> dict[str, list[str]]:
+    """Suggest matching Home Assistant entities."""
+
     states = hass.states.async_all()
 
-    out = {
+    result = {
         "pv_power": [],
         "house_power": [],
         "grid_power": [],
@@ -418,6 +542,7 @@ def suggest_entities(
 
     for state in states:
         entity_id = state.entity_id.lower()
+
         attributes = state.attributes
 
         friendly_name = str(
@@ -439,16 +564,17 @@ def suggest_entities(
             )
         ).lower()
 
+        # Weather entities.
         if state.entity_id.startswith(
             "weather."
         ):
-            out["weather"].append(
+            result["weather"].append(
                 state.entity_id
             )
 
-        # Only suggest Sigen/Sigenergy entities
-        # automatically when the entity clearly
-        # belongs to that ecosystem.
+        # Automatic suggestions are intentionally
+        # limited to clearly identifiable
+        # Sigen / Sigenergy entities.
         if not any(
             value in text
             for value in (
@@ -458,6 +584,7 @@ def suggest_entities(
         ):
             continue
 
+        # PV.
         if (
             "pv" in text
             and (
@@ -465,10 +592,11 @@ def suggest_entities(
                 or unit in ("w", "kw")
             )
         ):
-            out["pv_power"].append(
+            result["pv_power"].append(
                 state.entity_id
             )
 
+        # House / load.
         if (
             (
                 "load" in text
@@ -477,18 +605,20 @@ def suggest_entities(
             )
             and unit in ("w", "kw")
         ):
-            out["house_power"].append(
+            result["house_power"].append(
                 state.entity_id
             )
 
+        # Grid.
         if (
             "grid" in text
             and unit in ("w", "kw")
         ):
-            out["grid_power"].append(
+            result["grid_power"].append(
                 state.entity_id
             )
 
+        # Battery power.
         if (
             (
                 "battery" in text
@@ -496,10 +626,11 @@ def suggest_entities(
             )
             and unit in ("w", "kw")
         ):
-            out["battery_power"].append(
+            result["battery_power"].append(
                 state.entity_id
             )
 
+        # Battery SOC.
         if (
             (
                 "soc" in text
@@ -507,10 +638,11 @@ def suggest_entities(
             )
             and unit == "%"
         ):
-            out["battery_soc"].append(
+            result["battery_soc"].append(
                 state.entity_id
             )
 
+        # Wallbox / charger power.
         if (
             (
                 "charger" in text
@@ -518,10 +650,11 @@ def suggest_entities(
             )
             and unit in ("w", "kw")
         ):
-            out["wallbox_power"].append(
+            result["wallbox_power"].append(
                 state.entity_id
             )
 
+        # Wallbox / charger status.
         if (
             (
                 "charger" in text
@@ -529,8 +662,8 @@ def suggest_entities(
             )
             and unit not in ("w", "kw")
         ):
-            out["wallbox_status"].append(
+            result["wallbox_status"].append(
                 state.entity_id
             )
 
-    return out
+    return result
