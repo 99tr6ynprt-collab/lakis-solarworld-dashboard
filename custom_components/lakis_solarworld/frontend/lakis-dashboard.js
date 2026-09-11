@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.1.1
+ * Version 1.1.2
  *
  * Design:
  * - black / near-black background
@@ -285,7 +285,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .brand-subtitle {
           margin-top: 4px;
-          color: #7d9ab3;
+          color: #e8f2f8;
           font-size: 13px;
           text-align: center;
         }
@@ -389,8 +389,8 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
 
         .energy-icon { font-size: 28px; margin-bottom: 7px; }
-        .energy-name { color: #86a0b7; font-size: 12px; margin-bottom: 4px; }
-        .energy-value { font-size: 20px; font-weight: 800; }
+        .energy-name { color: #ffffff; font-size: 12px; margin-bottom: 4px; }
+        .energy-value { font-size: 20px; font-weight: 800; color: #ffffff; text-shadow: 0 0 8px rgba(255,255,255,.12); }
 
         .pv {
           border-color: rgba(45,230,130,.7);
@@ -431,8 +431,8 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
 
         .side-icon { font-size: 30px; }
-        .side-name { color: #93a9bd; font-size: 12px; }
-        .side-value { font-size: 21px; font-weight: 800; margin-top: 4px; }
+        .side-name { color: #ffffff; font-size: 12px; }
+        .side-value { font-size: 21px; font-weight: 800; margin-top: 4px; color: #ffffff; text-shadow: 0 0 8px rgba(255,255,255,.10); }
 
         .summary {
           position: relative;
@@ -447,13 +447,15 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
 
         .card-label {
-          color: #7f99b0;
+          color: #e1edf5;
           font-size: 11px;
           margin-bottom: 7px;
         }
 
         .card-value {
           font-size: 21px;
+          color: #ffffff;
+          text-shadow: 0 0 8px rgba(255,255,255,.10);
           font-weight: 800;
         }
 
@@ -536,7 +538,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
 
         .switch-text small {
-          color: #668096;
+          color: #d0dee8;
           font-size: 11px;
         }
 
@@ -650,7 +652,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         .footer {
           position: relative;
           text-align: center;
-          color: #526b80;
+          color: #9fb5c5;
           font-size: 10px;
           padding: 18px 0 4px;
         }
@@ -1316,7 +1318,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.1.1
+        · Version 1.1.2
       </div>
     `;
   }
