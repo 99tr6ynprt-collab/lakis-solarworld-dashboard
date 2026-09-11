@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.2
+ * Version 1.4.3
  *
  * Design:
  * - black / near-black background
@@ -25,6 +25,9 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
+    this._fullscreenMode = false;
+    this._fullscreenInitialized = false;
+    this._savedDocumentStyles = null;
   }
 
   set hass(value) {
@@ -273,6 +276,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .app {
           min-height: 100vh;
+          width: 100vw;
           padding: 24px;
           position: relative;
           overflow: hidden;
@@ -413,8 +417,8 @@ class LakisSolarworldDashboard extends HTMLElement {
           background:
             linear-gradient(
               145deg,
-              rgba(4,12,19,.18),
-              rgba(0,0,0,.12)
+              rgba(4,12,19,.08),
+              rgba(0,0,0,.04)
             );
           border: 1px solid rgba(0,170,255,.32);
           border-radius: 20px;
@@ -503,7 +507,7 @@ class LakisSolarworldDashboard extends HTMLElement {
           min-height: 105px;
           padding: 14px;
           border-radius: 17px;
-          background: rgba(2,8,13,.9);
+          background: rgba(2,8,13,.18);
           border: 1px solid rgba(0,170,255,.42);
           display: flex;
           flex-direction: column;
@@ -1024,7 +1028,7 @@ class LakisSolarworldDashboard extends HTMLElement {
       </style>
 
       <div class="app">
-        <button class="ha-sidebar-toggle" data-ha-sidebar-toggle type="button" title="Home-Assistant-Seitenleiste ein-/ausblenden" aria-label="Home-Assistant-Seitenleiste ein-/ausblenden">☰</button>
+        <button class="ha-sidebar-toggle" data-ha-sidebar-toggle type="button" title="Vollbild verlassen" aria-label="Vollbild verlassen">⛶</button>
         ${this._renderHeader()}
         ${this._renderTabs()}
         ${this._renderContent()}
@@ -1034,6 +1038,14 @@ class LakisSolarworldDashboard extends HTMLElement {
 
     this._attachEvents();
     this._rendered = true;
+
+    // Start the dashboard in presentation/fullscreen mode.
+    // The browser may reject requestFullscreen without a user gesture;
+    // in that case we still hide the Home Assistant sidebar as a fallback.
+    if (!this._fullscreenInitialized) {
+      this._fullscreenInitialized = true;
+      setTimeout(() => this._enterFullscreenMode(), 80);
+    }
   }
 
   _renderHeader() {
@@ -1634,38 +1646,136 @@ class LakisSolarworldDashboard extends HTMLElement {
   _setHASidebarHidden(hidden) {
     this._haSidebarHidden = hidden;
 
-    if (!this._haSidebarTargets.length) {
-      const sidebars = this._findInShadowRoots('ha-sidebar');
-      const drawers = this._findInShadowRoots('ha-drawer');
-      const targets = [...sidebars];
-      for (const drawer of drawers) {
-        const hasSidebar = drawer.querySelector?.('ha-sidebar') || (drawer.shadowRoot && this._findInShadowRoots('ha-sidebar').some((sidebar) => sidebar.getRootNode() === drawer.shadowRoot));
-        if (hasSidebar) targets.push(drawer);
-      }
-      this._haSidebarTargets = [...new Set(targets)].map((el) => ({
+    const sidebars = this._findInShadowRoots('ha-sidebar');
+    const drawers = this._findInShadowRoots('ha-drawer');
+    const candidates = [...sidebars];
+
+    // Hide the drawer that owns the HA sidebar as well; hiding only the
+    // inner sidebar can leave a dark empty strip on some HA/iPad builds.
+    for (const drawer of drawers) {
+      const hasSidebar =
+        drawer.querySelector?.('ha-sidebar') ||
+        (drawer.shadowRoot &&
+          this._findInShadowRoots('ha-sidebar').some(
+            (sidebar) => sidebar.getRootNode() === drawer.shadowRoot
+          ));
+      if (hasSidebar) candidates.push(drawer);
+    }
+
+    const unique = [...new Set(candidates)];
+    if (hidden) {
+      this._haSidebarTargets = unique.map((el) => ({
         el,
         display: el.style.display,
         visibility: el.style.visibility,
+        width: el.style.width,
+        minWidth: el.style.minWidth,
       }));
+    } else if (!this._haSidebarTargets.length) {
+      return;
     }
 
-    for (const target of this._haSidebarTargets) {
+    const targets = hidden ? this._haSidebarTargets : this._haSidebarTargets;
+    for (const target of targets) {
       if (hidden) {
         target.el.style.display = 'none';
+        target.el.style.visibility = 'hidden';
+        target.el.style.width = '0';
+        target.el.style.minWidth = '0';
       } else {
         target.el.style.display = target.display;
         target.el.style.visibility = target.visibility;
+        target.el.style.width = target.width;
+        target.el.style.minWidth = target.minWidth;
       }
     }
+
+    // Keep the page itself from reserving space for HA chrome while in
+    // presentation mode. These values are restored when leaving fullscreen.
+    if (hidden) {
+      if (!this._savedDocumentStyles) {
+        this._savedDocumentStyles = {
+          htmlOverflow: document.documentElement.style.overflow,
+          bodyOverflow: document.body?.style.overflow || '',
+          bodyMargin: document.body?.style.margin || '',
+        };
+      }
+      document.documentElement.style.overflow = 'hidden';
+      if (document.body) {
+        document.body.style.overflow = 'hidden';
+        document.body.style.margin = '0';
+      }
+    } else if (this._savedDocumentStyles) {
+      document.documentElement.style.overflow = this._savedDocumentStyles.htmlOverflow;
+      if (document.body) {
+        document.body.style.overflow = this._savedDocumentStyles.bodyOverflow;
+        document.body.style.margin = this._savedDocumentStyles.bodyMargin;
+      }
+      this._savedDocumentStyles = null;
+      this._haSidebarTargets = [];
+    }
+  }
+
+  async _enterFullscreenMode() {
+    this._fullscreenMode = true;
+    this._setHASidebarHidden(true);
+    this._updateFullscreenButton();
+
+    try {
+      if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (err) {
+      // iOS/Safari/Home Assistant webviews commonly reject automatic
+      // fullscreen because it requires a user gesture. The HA sidebar
+      // fallback above still gives the dashboard a clean presentation view.
+      console.debug('LAKIS SOLARWORLD fullscreen request not permitted:', err);
+    }
+  }
+
+  async _exitFullscreenMode() {
+    this._fullscreenMode = false;
+    this._setHASidebarHidden(false);
+    this._updateFullscreenButton();
+
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.debug('LAKIS SOLARWORLD fullscreen exit:', err);
+    }
+  }
+
+  _updateFullscreenButton() {
+    const button = this.querySelector('[data-ha-sidebar-toggle]');
+    if (!button) return;
+    button.textContent = this._fullscreenMode ? '⛶' : '☰';
+    button.title = this._fullscreenMode ? 'Vollbild verlassen' : 'Vollbild starten';
+    button.setAttribute('aria-label', button.title);
   }
 
   _attachEvents() {
     const sidebarToggle = this.querySelector("[data-ha-sidebar-toggle]");
     if (sidebarToggle) {
-      sidebarToggle.addEventListener("click", () => {
-        this._setHASidebarHidden(!this._haSidebarHidden);
+      sidebarToggle.addEventListener("click", async () => {
+        if (this._fullscreenMode) {
+          await this._exitFullscreenMode();
+        } else {
+          await this._enterFullscreenMode();
+        }
       });
     }
+
+    document.addEventListener('fullscreenchange', () => {
+      // If the browser exits fullscreen externally, restore the HA sidebar
+      // and return the button to its normal state.
+      if (!document.fullscreenElement && this._fullscreenMode) {
+        this._fullscreenMode = false;
+        this._setHASidebarHidden(false);
+        this._updateFullscreenButton();
+      }
+    });
 
     this.querySelectorAll("[data-tab]").forEach((button) => {
       button.addEventListener("click", async () => {
