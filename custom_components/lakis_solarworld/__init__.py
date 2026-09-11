@@ -32,6 +32,7 @@ BACKGROUND_SCREENS = {
     "wallbox",
     "heatpump",
     "vehicle",
+    "climate",
     "settings",
 }
 
@@ -70,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1008"
+                "lakis-dashboard.js?v=1010"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -118,6 +119,7 @@ async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) ->
             "wallbox": "",
             "heatpump": "",
             "vehicle": "",
+            "climate": "",
             "settings": "",
         },
     )

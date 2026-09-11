@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.2.0
+ * Version 1.3.0
  *
  * Design:
  * - black / near-black background
@@ -201,6 +201,31 @@ class LakisSolarworldDashboard extends HTMLElement {
       .replaceAll("'", "&#039;");
   }
 
+  _icon(type, size = 38) {
+    const common = `width="${size}" height="${size}" viewBox="0 0 64 64" fill="none" aria-hidden="true"`;
+    const icons = {
+      solar: `<svg ${common}><circle cx="32" cy="32" r="12" stroke="currentColor" stroke-width="4"/><path d="M32 4v10M32 50v10M4 32h10M50 32h10M12.2 12.2l7.1 7.1M44.7 44.7l7.1 7.1M51.8 12.2l-7.1 7.1M19.3 44.7l-7.1 7.1" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`,
+      battery: `<svg ${common}><rect x="14" y="11" width="36" height="42" rx="6" stroke="currentColor" stroke-width="4"/><path d="M25 6h14" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><rect x="20" y="31" width="24" height="15" rx="3" fill="currentColor" opacity=".85"/><path d="M32 18l-5 9h6l-4 8 9-11h-6l4-6z" fill="#071018"/></svg>`,
+      grid: `<svg ${common}><path d="M32 7v50M18 57l14-50 14 50M22 27h20M19 39h26M15 50h34" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 18h46" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>`,
+      house: `<svg ${common}><path d="M8 30 32 9l24 21v24H8V30Z" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><path d="M25 54V38h14v16M18 29h.1M32 29h.1M46 29h.1" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`,
+      car: `<svg ${common}><path d="M12 39l4-14c1-4 4-6 8-6h16c4 0 7 2 8 6l4 14v10H12V39Z" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><path d="M18 30h28M18 49v5M46 49v5" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><circle cx="21" cy="43" r="3" fill="currentColor"/><circle cx="43" cy="43" r="3" fill="currentColor"/></svg>`,
+      heat: `<svg ${common}><path d="M32 57c-11 0-18-7-18-17 0-8 5-14 11-20 1 6 5 9 7 10 2-7 4-13 1-22 10 7 17 17 17 29 0 12-8 20-18 20Z" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><path d="M32 49c-5 0-8-3-8-7 0-3 2-6 5-9 0 4 2 5 3 6 2-3 2-6 2-9 4 4 6 8 6 13 0 4-3 6-8 6Z" fill="currentColor" opacity=".8"/></svg>`,
+      climate: `<svg ${common}><rect x="11" y="17" width="42" height="28" rx="6" stroke="currentColor" stroke-width="4"/><path d="M19 28h26M19 35h18M23 49h18M32 12v5" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/><path d="M42 39c3 2 4 4 4 7" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`,
+      bolt: `<svg ${common}><path d="M37 4 14 34h15l-2 26 23-33H35l2-23Z" fill="currentColor"/></svg>`,
+    };
+    return icons[type] || icons.bolt;
+  }
+
+  _tileStyle(screen) {
+    const url = this._backgroundFor(screen);
+    return url ? `style="--tile-bg:url('${this._escape(url)}')"` : "";
+  }
+
+  _detailStyle(screen) {
+    const url = this._backgroundFor(screen);
+    return url ? `style="background-image:linear-gradient(120deg,rgba(0,0,0,.82),rgba(0,8,15,.48)),url('${this._escape(url)}');background-size:cover;background-position:center;"` : "";
+  }
+
   _backgroundFor(tab = this._tab) {
     const url = this._config.backgrounds?.[tab] || "";
     return url;
@@ -366,6 +391,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
 
         .section-title {
+          display:flex; align-items:center; gap:8px;
           font-size: 17px;
           font-weight: 800;
           color: #ffffff !important;
@@ -438,7 +464,8 @@ class LakisSolarworldDashboard extends HTMLElement {
           box-shadow: 0 0 20px rgba(0,130,220,.05);
         }
 
-        .energy-icon { font-size: 28px; margin-bottom: 7px; }
+        .energy-icon { width:42px; height:42px; display:flex; align-items:center; justify-content:center; margin-bottom:7px; color:#fff; }
+        .energy-icon svg { width:100%; height:100%; }
         .energy-name { color: #ffffff; font-size: 12px; margin-bottom: 4px; }
         .energy-value { font-size: 20px; font-weight: 800; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
 
@@ -478,7 +505,80 @@ class LakisSolarworldDashboard extends HTMLElement {
           display: flex;
           align-items: center;
           gap: 14px;
+          position: relative;
+          overflow: hidden;
         }
+        .side-card::before, .visual-tile::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background-image: var(--tile-bg);
+          background-size: cover;
+          background-position: center;
+          opacity: .46;
+          filter: saturate(1.05);
+        }
+        .side-card::after, .visual-tile::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(90deg,rgba(0,0,0,.78),rgba(0,0,0,.48));
+        }
+        .side-card > *, .visual-tile > * { position: relative; z-index: 2; }
+        .overview-shell {
+          position: relative;
+          display: grid;
+          grid-template-columns: minmax(0,2.35fr) minmax(280px,.82fr);
+          gap: 16px;
+        }
+        .overview-main { min-width: 0; }
+        .status-panel {
+          display: grid;
+          gap: 12px;
+          align-content: start;
+        }
+        .status-card {
+          padding: 18px;
+          border-radius: 20px;
+          background: linear-gradient(145deg,rgba(4,12,19,.94),rgba(0,0,0,.88));
+          border: 1px solid rgba(0,170,255,.30);
+          box-shadow: 0 18px 55px rgba(0,0,0,.38);
+          backdrop-filter: blur(10px);
+        }
+        .status-title { font-size: 15px; font-weight: 850; color:#fff; margin-bottom:12px; }
+        .status-row { display:grid; grid-template-columns:24px 1fr auto; gap:9px; align-items:center; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.06); }
+        .status-row:last-child { border-bottom:0; }
+        .status-dot { width:10px; height:10px; border-radius:50%; background:#42ef91; box-shadow:0 0 10px rgba(66,239,145,.8); }
+        .status-label { color:#dce9f1; font-size:12px; }
+        .status-value { color:#65efaa; font-size:12px; font-weight:800; }
+        .visual-tiles {
+          display:grid;
+          grid-template-columns:repeat(5,minmax(0,1fr));
+          gap:12px;
+          margin-top:14px;
+        }
+        .visual-tile {
+          cursor:pointer;
+          min-height:185px;
+          position:relative;
+          overflow:hidden;
+          border-radius:18px;
+          border:1px solid rgba(0,170,255,.30);
+          background:linear-gradient(145deg,rgba(4,12,19,.95),rgba(0,0,0,.90));
+          box-shadow:0 15px 45px rgba(0,0,0,.36);
+          padding:16px;
+          display:flex;
+          flex-direction:column;
+          justify-content:flex-end;
+        }
+        .tile-icon { width:42px; height:42px; color:#fff; margin-bottom:auto; filter:drop-shadow(0 0 8px rgba(0,180,255,.35)); }
+        .tile-title { color:#fff; font-size:14px; font-weight:800; }
+        .tile-value { color:#fff; font-size:25px; font-weight:900; margin-top:6px; text-shadow:0 0 12px rgba(255,255,255,.2); }
+        .tile-meta { color:#d7e6ef; font-size:11px; margin-top:3px; }
+        .overview-note { color:#b9cbd6; font-size:11px; margin-top:10px; }
+        .flow-card { position:relative; overflow:hidden; }
+        .flow-card::after { content:""; position:absolute; inset:0; pointer-events:none; background:radial-gradient(circle at 50% 50%,rgba(0,160,255,.06),transparent 55%); }
+        .flow-card > * { position:relative; z-index:2; }
 
         .side-icon { font-size: 30px; }
         .side-name { color: #ffffff; font-size: 12px; }
@@ -778,6 +878,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         @media (max-width: 1000px) {
           .dashboard-grid,
+          .overview-shell,
           .settings-grid,
           .detail-hero {
             grid-template-columns: 1fr;
@@ -786,6 +887,7 @@ class LakisSolarworldDashboard extends HTMLElement {
           .summary {
             grid-template-columns: repeat(2,1fr);
           }
+          .visual-tiles { grid-template-columns:repeat(3,minmax(0,1fr)); }
 
           .settings-card.full {
             grid-column: auto;
@@ -835,11 +937,13 @@ class LakisSolarworldDashboard extends HTMLElement {
           .background-grid {
             grid-template-columns: 1fr;
           }
+          .visual-tiles { grid-template-columns:repeat(2,minmax(0,1fr)); }
           .detail-hero {
             min-height: 500px;
             padding: 26px;
           }
           .detail-value { font-size: 52px; }
+          .visual-tiles { grid-template-columns:1fr; }
         }
       </style>
 
@@ -901,6 +1005,7 @@ class LakisSolarworldDashboard extends HTMLElement {
       ["wallbox", "Wallbox", this._enabled("wallbox")],
       ["heatpump", "Wärmepumpe", this._enabled("heatpump")],
       ["vehicle", this._config.vehicle_name || "Fahrzeug", this._enabled("vehicle")],
+      ["climate", "Klimaanlagen", this._enabled("climate")],
       ["settings", "⚙ Einstellungen", true],
     ];
 
@@ -931,6 +1036,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     if (this._tab === "wallbox") return this._renderWallbox();
     if (this._tab === "heatpump") return this._renderHeatpump();
     if (this._tab === "vehicle") return this._renderVehicle();
+    if (this._tab === "climate") return this._renderClimate();
 
     return this._renderOverview();
   }
@@ -974,131 +1080,109 @@ class LakisSolarworldDashboard extends HTMLElement {
     const wallbox = this._number(this._entity("wallbox_power"));
     const heatpump = this._number(this._entity("heatpump_power"));
     const vehicle = this._number(this._entity("vehicle_charging_power"));
+    const climate = this._state(this._entity("climate_1"));
+    const climateTemp = climate?.attributes?.current_temperature;
+    const gridLabel = grid === null ? "—" : (grid < 0 ? "Einspeisung" : "Bezug");
+    const batteryLabel = battery === null ? "—" : (battery > 5 ? "Laden" : battery < -5 ? "Entladen" : "Standby");
 
     return `
-      <div class="dashboard-grid">
-        <div>
+      <div class="overview-shell">
+        <div class="overview-main">
           <div class="flow-card">
-            <div class="section-title">⚡ Aktueller Energiefluss</div>
-
+            <div class="section-title">${this._icon("bolt",22)} <span>Aktueller Energiefluss</span></div>
             <div class="flow">
               ${this._renderFlowArrows(pv, grid, battery, wallbox)}
               <div class="energy-node pv pv-node">
-                <div class="energy-icon">☀️</div>
+                <div class="energy-icon">${this._icon("solar",40)}</div>
                 <div class="energy-name">PV</div>
                 <div class="energy-value">${this._formatPower(pv)}</div>
               </div>
-
               <div class="energy-node grid grid-node">
-                <div class="energy-icon">⚡</div>
+                <div class="energy-icon">${this._icon("grid",40)}</div>
                 <div class="energy-name">Netz</div>
                 <div class="energy-value">${this._formatPower(grid)}</div>
               </div>
-
               <div class="energy-node house">
-                <div class="energy-icon">🏠</div>
+                <div class="energy-icon">${this._icon("house",44)}</div>
                 <div class="energy-name">Haus</div>
                 <div class="energy-value">${this._formatPower(house)}</div>
+                <div class="energy-name">Verbrauch</div>
               </div>
-
               <div class="energy-node battery battery-node">
-                <div class="energy-icon">🔋</div>
+                <div class="energy-icon">${this._icon("battery",40)}</div>
                 <div class="energy-name">Batterie</div>
                 <div class="energy-value">${this._formatPercent(soc)}</div>
-                <div class="energy-name">${this._formatPower(battery)}</div>
+                <div class="energy-name">${this._formatPower(battery)} · ${batteryLabel}</div>
               </div>
-
               <div class="energy-node wallbox-node">
-                <div class="energy-icon">🚗</div>
+                <div class="energy-icon">${this._icon("car",40)}</div>
                 <div class="energy-name">Wallbox</div>
-                <div class="energy-value">
-                  ${this._enabled("wallbox") ? this._formatPower(wallbox) : "deaktiviert"}
-                </div>
+                <div class="energy-value">${this._enabled("wallbox") ? this._formatPower(wallbox) : "deaktiviert"}</div>
+                <div class="energy-name">${this._enabled("wallbox") ? "Ladeleistung" : ""}</div>
               </div>
             </div>
           </div>
-
           <div class="summary">
-            <div class="card">
-              <div class="card-label">PV-Leistung</div>
-              <div class="card-value">${this._formatPower(pv)}</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Hausverbrauch</div>
-              <div class="card-value">${this._formatPower(house)}</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Netz</div>
-              <div class="card-value">${this._formatPower(grid)}</div>
-            </div>
-            <div class="card">
-              <div class="card-label">Batterie SOC</div>
-              <div class="card-value">${this._formatPercent(soc)}</div>
-            </div>
+            <div class="card"><div class="card-label">PV-Leistung</div><div class="card-value">${this._formatPower(pv)}</div></div>
+            <div class="card"><div class="card-label">Hausverbrauch</div><div class="card-value">${this._formatPower(house)}</div></div>
+            <div class="card"><div class="card-label">Netz</div><div class="card-value">${this._formatPower(grid)}</div></div>
+            <div class="card"><div class="card-label">Batterie SOC</div><div class="card-value">${this._formatPercent(soc)}</div></div>
           </div>
         </div>
 
-        <div class="side-column">
-          <div class="side-card">
-            <div class="side-icon">🔋</div>
-            <div>
-              <div class="side-name">Batterie</div>
-              <div class="side-value">${this._formatPower(battery)}</div>
-              <div class="side-name">SOC ${this._formatPercent(soc)}</div>
-            </div>
+        <div class="status-panel">
+          <div class="status-card">
+            <div class="status-title">Tages-/Anlagenwerte</div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">PV aktuell</span><span class="status-value">${this._formatPower(pv)}</span></div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">Hausverbrauch</span><span class="status-value">${this._formatPower(house)}</span></div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">Batterie</span><span class="status-value">${this._formatPercent(soc)}</span></div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">Netz</span><span class="status-value">${gridLabel}</span></div>
           </div>
-
-          <div class="side-card">
-            <div class="side-icon">⚡</div>
-            <div>
-              <div class="side-name">Netz</div>
-              <div class="side-value">${this._formatPower(grid)}</div>
-              <div class="side-name">Bezug / Einspeisung</div>
-            </div>
+          <div class="status-card">
+            <div class="status-title">Aktueller Status</div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">PV-Anlage</span><span class="status-value">${pv !== null ? "Aktiv" : "—"}</span></div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">Batterie</span><span class="status-value">${batteryLabel}</span></div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">Wallbox</span><span class="status-value">${this._enabled("wallbox") ? (wallbox !== null && wallbox > 5 ? "Lädt" : "Bereit") : "Aus"}</span></div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">Wärmepumpe</span><span class="status-value">${this._enabled("heatpump") ? (heatpump !== null ? "Aktiv" : "Bereit") : "Aus"}</span></div>
+            <div class="status-row"><span class="status-dot"></span><span class="status-label">Klima</span><span class="status-value">${climate ? this._escape(climate.state) : (climateTemp != null ? "Aktiv" : "—")}</span></div>
           </div>
-
-          ${this._enabled("wallbox") ? `
-            <div class="side-card">
-              <div class="side-icon">🚙</div>
-              <div>
-                <div class="side-name">Wallbox</div>
-                <div class="side-value">${this._formatPower(wallbox)}</div>
-                <div class="side-name">Ladeleistung</div>
-              </div>
-            </div>
-          ` : ""}
-
-          ${this._enabled("heatpump") ? `
-            <div class="side-card">
-              <div class="side-icon">♨️</div>
-              <div>
-                <div class="side-name">Wärmepumpe</div>
-                <div class="side-value">${this._formatPower(heatpump)}</div>
-                <div class="side-name">Leistung</div>
-              </div>
-            </div>
-          ` : ""}
-
-          ${this._enabled("vehicle") ? `
-            <div class="side-card">
-              <div class="side-icon">🚗</div>
-              <div>
-                <div class="side-name">${this._escape(this._config.vehicle_name || "Fahrzeug")}</div>
-                <div class="side-value">${this._formatPower(vehicle)}</div>
-                <div class="side-name">Ladeleistung</div>
-              </div>
-            </div>
-          ` : ""}
         </div>
       </div>
+
+      <div class="visual-tiles">
+        <div class="visual-tile" ${this._tileStyle("pv")} data-tile-tab="pv">
+          <div class="tile-icon">${this._icon("solar",44)}</div><div class="tile-title">PV-Anlage</div><div class="tile-value">${this._formatPower(pv)}</div><div class="tile-meta">Aktuelle Leistung</div>
+        </div>
+        <div class="visual-tile" ${this._tileStyle("battery")} data-tile-tab="battery">
+          <div class="tile-icon">${this._icon("battery",44)}</div><div class="tile-title">Batterie</div><div class="tile-value">${this._formatPercent(soc)}</div><div class="tile-meta">${this._formatPower(battery)} · ${batteryLabel}</div>
+        </div>
+        ${this._enabled("wallbox") ? `<div class="visual-tile" ${this._tileStyle("wallbox")} data-tile-tab="wallbox"><div class="tile-icon">${this._icon("car",44)}</div><div class="tile-title">Wallbox / Fahrzeug</div><div class="tile-value">${this._formatPower(wallbox)}</div><div class="tile-meta">Ladeleistung · Fahrzeug ${this._formatPercent(this._number(this._entity("vehicle_soc")))}</div></div>` : ""}
+        ${this._enabled("heatpump") ? `<div class="visual-tile" ${this._tileStyle("heatpump")} data-tile-tab="heatpump"><div class="tile-icon">${this._icon("heat",44)}</div><div class="tile-title">Wärmepumpe</div><div class="tile-value">${this._formatPower(heatpump)}</div><div class="tile-meta">Aktuelle Leistung</div></div>` : ""}
+        ${this._enabled("climate") ? `<div class="visual-tile" ${this._tileStyle("climate")} data-tile-tab="climate"><div class="tile-icon">${this._icon("climate",44)}</div><div class="tile-title">Klimaanlagen</div><div class="tile-value">${climateTemp != null ? this._formatTemp(Number(climateTemp)) : "—"}</div><div class="tile-meta">${climate ? this._escape(climate.state) : "Keine Klima-Entität"}</div></div>` : ""}
+      </div>
+      <div class="overview-note">Die Hintergrundbilder der Kacheln entsprechen den jeweiligen Dashboard-Seiten und werden unter Einstellungen hochgeladen.</div>
     `;
   }
 
   _renderPV() {
     const pv = this._number(this._entity("pv_power"));
     return `
-      <div class="settings-card">
-        <h3>☀️ Photovoltaik</h3>
+      <div class="detail-page">
+        <div class="detail-hero" ${this._detailStyle("pv")}>
+          <div>
+            <div class="detail-icon">${this._icon("solar",76)}</div>
+            <div class="detail-title">Photovoltaik</div>
+            <div class="detail-subtitle">Aktuelle PV-Leistung</div>
+            <div class="detail-value">${this._formatPower(pv)}</div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-metric"><div class="detail-metric-label">PV-Leistung</div><div class="detail-metric-value">${this._formatPower(pv)}</div></div>
+            <div class="detail-metric"><div class="detail-metric-label">Entität</div><div class="detail-metric-value">${this._escape(this._entity("pv_power") || "—")}</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-card" style="margin-top:14px;">
+        <h3>PV-Einstellung</h3>
         <p>Aktuelle PV-Leistung</p>
         <div class="card-value">${this._formatPower(pv)}</div>
         <br>
@@ -1110,11 +1194,22 @@ class LakisSolarworldDashboard extends HTMLElement {
   _renderGrid() {
     const grid = this._number(this._entity("grid_power"));
     return `
-      <div class="settings-card">
-        <h3>⚡ Netz</h3>
-        <p>Netzbezug bzw. Einspeisung</p>
-        <div class="card-value">${this._formatPower(grid)}</div>
-        <br>
+      <div class="detail-page">
+        <div class="detail-hero" ${this._detailStyle("grid")}>
+          <div>
+            <div class="detail-icon">${this._icon("grid",76)}</div>
+            <div class="detail-title">Netz</div>
+            <div class="detail-subtitle">Netzbezug bzw. Einspeisung</div>
+            <div class="detail-value">${this._formatPower(grid)}</div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-metric"><div class="detail-metric-label">Leistung</div><div class="detail-metric-value">${this._formatPower(grid)}</div></div>
+            <div class="detail-metric"><div class="detail-metric-label">Richtung</div><div class="detail-metric-value">${grid === null ? "—" : grid < 0 ? "Einspeisung" : "Bezug"}</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-card" style="margin-top:14px;">
+        <h3>Netz-Einstellung</h3>
         ${this._entitySelect("grid_power", "Netzleistungsentität", ["sensor"], "Positiv = Bezug, negativ = Einspeisung.")}
       </div>
     `;
@@ -1125,9 +1220,24 @@ class LakisSolarworldDashboard extends HTMLElement {
     const power = this._number(this._entity("battery_power"));
 
     return `
-      <div class="settings-grid">
+      <div class="detail-page">
+        <div class="detail-hero" ${this._detailStyle("battery")}>
+          <div>
+            <div class="detail-icon">${this._icon("battery",76)}</div>
+            <div class="detail-title">Batterie</div>
+            <div class="detail-subtitle">Ladezustand und aktuelle Lade-/Entladeleistung</div>
+            <div class="detail-value">${this._formatPercent(soc)}</div>
+            <div class="detail-meta">${this._formatPower(power)}</div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-metric"><div class="detail-metric-label">SOC</div><div class="detail-metric-value">${this._formatPercent(soc)}</div></div>
+            <div class="detail-metric"><div class="detail-metric-label">Leistung</div><div class="detail-metric-value">${this._formatPower(power)}</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-grid" style="margin-top:14px;">
         <div class="settings-card">
-          <h3>🔋 Ladezustand</h3>
+          <h3>Ladezustand</h3>
           <p>Aktueller Batteriezustand</p>
           <div class="card-value">${this._formatPercent(soc)}</div>
         </div>
@@ -1151,9 +1261,9 @@ class LakisSolarworldDashboard extends HTMLElement {
     const status = this._state(this._entity("wallbox_status"));
     return `
       <div class="detail-page">
-        <div class="detail-hero">
+        <div class="detail-hero" ${this._detailStyle("wallbox")}>
           <div>
-            <div class="detail-icon">🚙</div>
+            <div class="detail-icon">${this._icon("car",76)}</div>
             <div class="detail-title">Wallbox</div>
             <div class="detail-subtitle">Aktuelle Ladeleistung und Wallbox-Status</div>
             <div class="detail-value">${this._formatPower(power)}</div>
@@ -1177,9 +1287,9 @@ class LakisSolarworldDashboard extends HTMLElement {
     const climate = this._state(this._entity("heatpump_entity"));
     return `
       <div class="detail-page">
-        <div class="detail-hero">
+        <div class="detail-hero" ${this._detailStyle("heatpump")}>
           <div>
-            <div class="detail-icon">♨️</div>
+            <div class="detail-icon">${this._icon("heat",76)}</div>
             <div class="detail-title">Wärmepumpe</div>
             <div class="detail-subtitle">Leistung, Temperaturen und Betriebszustand</div>
             <div class="detail-value">${this._formatPower(power)}</div>
@@ -1203,9 +1313,9 @@ class LakisSolarworldDashboard extends HTMLElement {
     const image = this._config.vehicle_image || "";
     return `
       <div class="detail-page">
-        <div class="detail-hero" ${image ? `style="background-image:linear-gradient(120deg,rgba(0,0,0,.82),rgba(0,8,15,.55)),url('${this._escape(image)}');background-size:cover;background-position:center;"` : ""}>
+        <div class="detail-hero" ${image ? `style="background-image:linear-gradient(120deg,rgba(0,0,0,.82),rgba(0,8,15,.55)),url('${this._escape(image)}');background-size:cover;background-position:center;"` : this._detailStyle("vehicle")}>
           <div>
-            <div class="detail-icon">🚗</div>
+            <div class="detail-icon">${this._icon("car",76)}</div>
             <div class="detail-title">${this._escape(this._config.vehicle_name || "Fahrzeug")}</div>
             <div class="detail-subtitle">Fahrzeug- und Ladedaten</div>
             <div class="detail-value">${this._formatPower(power)}</div>
@@ -1217,6 +1327,39 @@ class LakisSolarworldDashboard extends HTMLElement {
             <div class="detail-metric"><div class="detail-metric-label">Status</div><div class="detail-metric-value">${status ? this._escape(status.state) : "—"}</div></div>
           </div>
         </div>
+      </div>
+    `;
+  }
+
+  _renderClimate() {
+    const climate = this._state(this._entity("climate_1"));
+    const temp = climate?.attributes?.current_temperature;
+    const target = climate?.attributes?.temperature;
+    const mode = climate?.state || "—";
+    return `
+      <div class="detail-page">
+        <div class="detail-hero" ${this._detailStyle("climate")}>
+          <div>
+            <div class="detail-icon">${this._icon("climate",76)}</div>
+            <div class="detail-title">Klimaanlagen</div>
+            <div class="detail-subtitle">Raumtemperatur, Sollwert und Betriebszustand</div>
+            <div class="detail-value">${temp != null ? this._formatTemp(Number(temp)) : "—"}</div>
+            <div class="detail-meta">${this._escape(mode)}</div>
+          </div>
+          <div class="detail-grid">
+            <div class="detail-metric"><div class="detail-metric-label">Raumtemperatur</div><div class="detail-metric-value">${temp != null ? this._formatTemp(Number(temp)) : "—"}</div></div>
+            <div class="detail-metric"><div class="detail-metric-label">Solltemperatur</div><div class="detail-metric-value">${target != null ? this._formatTemp(Number(target)) : "—"}</div></div>
+            <div class="detail-metric"><div class="detail-metric-label">Betriebsart</div><div class="detail-metric-value">${this._escape(mode)}</div></div>
+            <div class="detail-metric"><div class="detail-metric-label">Entität</div><div class="detail-metric-value">${this._escape(this._entity("climate_1") || "—")}</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-card" style="margin-top:14px;">
+        <h3>Klima-Einstellungen</h3>
+        ${this._entitySelect("climate_1", "Klimaanlage 1", ["climate"], "Erste Climate-Entität.")}
+        ${this._entitySelect("climate_2", "Klimaanlage 2", ["climate"], "Optional.")}
+        ${this._entitySelect("climate_3", "Klimaanlage 3", ["climate"], "Optional.")}
+        ${this._entitySelect("climate_4", "Klimaanlage 4", ["climate"], "Optional.")}
       </div>
     `;
   }
@@ -1309,6 +1452,7 @@ class LakisSolarworldDashboard extends HTMLElement {
             ${this._backgroundItem("wallbox", "Wallbox")}
             ${this._backgroundItem("heatpump", "Wärmepumpe")}
             ${this._backgroundItem("vehicle", "Fahrzeug")}
+            ${this._backgroundItem("climate", "Klimaanlagen")}
             ${this._backgroundItem("settings", "Einstellungen")}
           </div>
         </div>
@@ -1390,6 +1534,17 @@ class LakisSolarworldDashboard extends HTMLElement {
           await this._save(true);
         }
         this._tab = button.dataset.tab;
+        this._message = "";
+        this._render();
+      });
+    });
+
+    this.querySelectorAll("[data-tile-tab]").forEach((tile) => {
+      tile.addEventListener("click", async () => {
+        if (this._tab === "settings" && this._dirty) {
+          await this._save(true);
+        }
+        this._tab = tile.dataset.tileTab;
         this._message = "";
         this._render();
       });
@@ -1584,7 +1739,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.2.0
+        · Version 1.3.0
       </div>
     `;
   }
