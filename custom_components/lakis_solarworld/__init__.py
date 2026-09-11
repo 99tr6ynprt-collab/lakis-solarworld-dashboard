@@ -104,7 +104,7 @@ async def async_setup_entry(
             # the current dashboard JavaScript.
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1002"
+                "lakis-dashboard.js?v=1003"
             ),
 
             sidebar_title="LAKIS SOLARWORLD",
