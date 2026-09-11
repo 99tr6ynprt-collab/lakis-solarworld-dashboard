@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.3
+ * Version 1.4.4
  *
  * Design:
  * - black / near-black background
@@ -25,8 +25,8 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
-    this._fullscreenMode = false;
-    this._fullscreenInitialized = false;
+    this._kioskMode = false;
+    this._kioskInitialized = false;
     this._savedDocumentStyles = null;
   }
 
@@ -1039,12 +1039,14 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._attachEvents();
     this._rendered = true;
 
-    // Start the dashboard in presentation/fullscreen mode.
-    // The browser may reject requestFullscreen without a user gesture;
-    // in that case we still hide the Home Assistant sidebar as a fallback.
-    if (!this._fullscreenInitialized) {
-      this._fullscreenInitialized = true;
-      setTimeout(() => this._enterFullscreenMode(), 80);
+    // Start in Home Assistant Kiosk Mode.
+    // IMPORTANT: Do not use the browser Fullscreen API here. On iPad/Safari
+    // that API can blank the HA panel or create a separate fullscreen layer.
+    // Kiosk Mode only hides the HA sidebar and leaves the dashboard itself
+    // fully rendered.
+    if (!this._kioskInitialized) {
+      this._kioskInitialized = true;
+      setTimeout(() => this._enterKioskMode(), 80);
     }
   }
 
@@ -1646,52 +1648,43 @@ class LakisSolarworldDashboard extends HTMLElement {
   _setHASidebarHidden(hidden) {
     this._haSidebarHidden = hidden;
 
+    // Only hide the actual HA sidebar. Never hide ha-drawer: on current
+    // Home Assistant/iPad builds the drawer can also own the main panel,
+    // which would make the whole dashboard appear black/empty.
     const sidebars = this._findInShadowRoots('ha-sidebar');
-    const drawers = this._findInShadowRoots('ha-drawer');
-    const candidates = [...sidebars];
+    const unique = [...new Set(sidebars)];
 
-    // Hide the drawer that owns the HA sidebar as well; hiding only the
-    // inner sidebar can leave a dark empty strip on some HA/iPad builds.
-    for (const drawer of drawers) {
-      const hasSidebar =
-        drawer.querySelector?.('ha-sidebar') ||
-        (drawer.shadowRoot &&
-          this._findInShadowRoots('ha-sidebar').some(
-            (sidebar) => sidebar.getRootNode() === drawer.shadowRoot
-          ));
-      if (hasSidebar) candidates.push(drawer);
-    }
-
-    const unique = [...new Set(candidates)];
     if (hidden) {
-      this._haSidebarTargets = unique.map((el) => ({
-        el,
-        display: el.style.display,
-        visibility: el.style.visibility,
-        width: el.style.width,
-        minWidth: el.style.minWidth,
-      }));
+      if (!this._haSidebarTargets.length) {
+        this._haSidebarTargets = unique.map((el) => ({
+          el,
+          display: el.style.display,
+          visibility: el.style.visibility,
+          width: el.style.width,
+          minWidth: el.style.minWidth,
+          maxWidth: el.style.maxWidth,
+        }));
+      }
     } else if (!this._haSidebarTargets.length) {
       return;
     }
 
-    const targets = hidden ? this._haSidebarTargets : this._haSidebarTargets;
-    for (const target of targets) {
+    for (const target of this._haSidebarTargets) {
       if (hidden) {
         target.el.style.display = 'none';
         target.el.style.visibility = 'hidden';
         target.el.style.width = '0';
         target.el.style.minWidth = '0';
+        target.el.style.maxWidth = '0';
       } else {
         target.el.style.display = target.display;
         target.el.style.visibility = target.visibility;
         target.el.style.width = target.width;
         target.el.style.minWidth = target.minWidth;
+        target.el.style.maxWidth = target.maxWidth;
       }
     }
 
-    // Keep the page itself from reserving space for HA chrome while in
-    // presentation mode. These values are restored when leaving fullscreen.
     if (hidden) {
       if (!this._savedDocumentStyles) {
         this._savedDocumentStyles = {
@@ -1716,66 +1709,37 @@ class LakisSolarworldDashboard extends HTMLElement {
     }
   }
 
-  async _enterFullscreenMode() {
-    this._fullscreenMode = true;
+  _enterKioskMode() {
+    this._kioskMode = true;
     this._setHASidebarHidden(true);
-    this._updateFullscreenButton();
-
-    try {
-      if (!document.fullscreenElement && document.documentElement?.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-      }
-    } catch (err) {
-      // iOS/Safari/Home Assistant webviews commonly reject automatic
-      // fullscreen because it requires a user gesture. The HA sidebar
-      // fallback above still gives the dashboard a clean presentation view.
-      console.debug('LAKIS SOLARWORLD fullscreen request not permitted:', err);
-    }
+    this._updateKioskButton();
   }
 
-  async _exitFullscreenMode() {
-    this._fullscreenMode = false;
+  _exitKioskMode() {
+    this._kioskMode = false;
     this._setHASidebarHidden(false);
-    this._updateFullscreenButton();
-
-    try {
-      if (document.fullscreenElement && document.exitFullscreen) {
-        await document.exitFullscreen();
-      }
-    } catch (err) {
-      console.debug('LAKIS SOLARWORLD fullscreen exit:', err);
-    }
+    this._updateKioskButton();
   }
 
-  _updateFullscreenButton() {
+  _updateKioskButton() {
     const button = this.querySelector('[data-ha-sidebar-toggle]');
     if (!button) return;
-    button.textContent = this._fullscreenMode ? '⛶' : '☰';
-    button.title = this._fullscreenMode ? 'Vollbild verlassen' : 'Vollbild starten';
+    button.textContent = this._kioskMode ? '×' : '☰';
+    button.title = this._kioskMode ? 'Kiosk-Modus verlassen' : 'Kiosk-Modus starten';
     button.setAttribute('aria-label', button.title);
   }
 
   _attachEvents() {
     const sidebarToggle = this.querySelector("[data-ha-sidebar-toggle]");
     if (sidebarToggle) {
-      sidebarToggle.addEventListener("click", async () => {
-        if (this._fullscreenMode) {
-          await this._exitFullscreenMode();
+      sidebarToggle.addEventListener("click", () => {
+        if (this._kioskMode) {
+          this._exitKioskMode();
         } else {
-          await this._enterFullscreenMode();
+          this._enterKioskMode();
         }
       });
     }
-
-    document.addEventListener('fullscreenchange', () => {
-      // If the browser exits fullscreen externally, restore the HA sidebar
-      // and return the button to its normal state.
-      if (!document.fullscreenElement && this._fullscreenMode) {
-        this._fullscreenMode = false;
-        this._setHASidebarHidden(false);
-        this._updateFullscreenButton();
-      }
-    });
 
     this.querySelectorAll("[data-tab]").forEach((button) => {
       button.addEventListener("click", async () => {
