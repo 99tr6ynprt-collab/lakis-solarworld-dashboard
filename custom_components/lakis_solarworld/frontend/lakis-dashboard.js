@@ -1,1372 +1,1571 @@
+/* LAKIS SOLARWORLD Dashboard
+ * Dashboard UI
+ * Version 1.1.0
+ */
+
 class LakisSolarworldDashboard extends HTMLElement {
   constructor() {
     super();
 
     this._hass = null;
-    this._panel = null;
     this._entry = null;
-    this._data = {};
-    this._weather = null;
+    this._config = {};
     this._tab = "overview";
-    this._last = 0;
-    this._loading = false;
-  }
-
-  /**
-   * Home Assistant provides the panel configuration
-   * through the "panel" property.
-   */
-  set panel(value) {
-    this._panel = value;
-    this._entry = value?.config?.entry_id || null;
-
-    this._load();
-  }
-
-  get panel() {
-    return this._panel;
-  }
-
-  /**
-   * Keep compatibility with possible older panel/custom
-   * integrations that use setConfig().
-   */
-  setConfig(config) {
-    this._entry = config?.entry_id || null;
-    this._config = config || {};
-
-    this._load();
+    this._loading = true;
+    this._message = "";
+    this._vehicleImage = null;
   }
 
   set hass(value) {
     this._hass = value;
-
-    if (!this._entry && this._panel) {
-      this._entry =
-        this._panel?.config?.entry_id || null;
-    }
-
-    if (!this._ready) {
-      this._ready = true;
+    if (this._loading && value) {
       this._load();
-      return;
     }
+    this._render();
+  }
 
-    if (
-      Date.now() - this._last > 3000
-      && !this._loading
-    ) {
-      this._last = Date.now();
+  set panel(value) {
+    const entryId = value?.config?.entry_id || value?.entry_id;
+    if (entryId) {
+      this._entry = entryId;
+      this._load();
+    }
+  }
+
+  setConfig(config) {
+    if (config?.entry_id) {
+      this._entry = config.entry_id;
+      this._load();
+    }
+  }
+
+  async _load() {
+    if (!this._hass || !this._entry) return;
+
+    try {
+      this._loading = true;
+
+      const result = await this._hass.callWS({
+        type: "lakis_solarworld/get_config",
+        entry_id: this._entry,
+      });
+
+      this._config = result?.config || result || {};
+      this._loading = false;
+      this._render();
+    } catch (err) {
+      console.error("LAKIS SOLARWORLD:", err);
+      this._loading = false;
+      this._message = "Konfiguration konnte nicht geladen werden.";
       this._render();
     }
   }
 
-  get hass() {
-    return this._hass;
+  _enabled(module) {
+    const modules = this._config.modules || {};
+    return modules[module] !== false;
   }
 
-  async _load() {
-    if (
-      !this._hass
-      || !this._entry
-      || this._loading
-    ) {
-      return;
+  _entity(key) {
+    return this._config[key] || "";
+  }
+
+  _state(entityId) {
+    if (!this._hass || !entityId) return null;
+    return this._hass.states?.[entityId] || null;
+  }
+
+  _number(entityId) {
+    const state = this._state(entityId);
+    if (!state) return null;
+
+    const value = Number(state.state);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  _formatPower(value) {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "--";
     }
 
-    this._loading = true;
+    return `${Math.round(value).toLocaleString("de-DE")} W`;
+  }
 
-    try {
-      this._data = await this._hass.callWS({
-        type: "lakis_solarworld/get_config",
-        entry_id: this._entry,
-      });
-    } catch (error) {
-      console.error(
-        "LAKIS SOLARWORLD: configuration could not be loaded",
-        error
-      );
-
-      this._data = {
-        modules: [
-          "energy",
-          "pv",
-          "grid",
-          "battery",
-        ],
-      };
+  _formatPercent(value) {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "--";
     }
 
-    const states = this._hass.states;
-
-    this._weather =
-      this._data.weather_entity
-      && states[this._data.weather_entity]
-        ? states[this._data.weather_entity]
-        : Object.values(states).find(
-            (state) =>
-              state.entity_id.startsWith(
-                "weather."
-              )
-          );
-
-    this._loading = false;
-
-    this._render();
+    return `${Math.round(value)} %`;
   }
 
-  _v(id) {
-    const state =
-      id && this._hass?.states?.[id];
+  _formatTemp(value) {
+    if (value === null || value === undefined || !Number.isFinite(value)) {
+      return "--";
+    }
 
-    return state
-      ? state.state
-      : "--";
+    return `${value.toFixed(1).replace(".", ",")} °C`;
   }
 
-  _unit(id) {
-    const state =
-      id && this._hass?.states?.[id];
+  _entityName(entityId) {
+    if (!entityId) return "Keine Entität ausgewählt";
+
+    const state = this._state(entityId);
+    if (!state) return entityId;
 
     return (
-      state?.attributes
-        ?.unit_of_measurement || ""
+      state.attributes?.friendly_name ||
+      entityId
     );
   }
 
-  _metric(id, label) {
+  _domain(entityId) {
+    if (!entityId || !entityId.includes(".")) return "";
+    return entityId.split(".")[0];
+  }
+
+  _entityOptions(domains = []) {
+    if (!this._hass?.states) return [];
+
+    const result = Object.entries(this._hass.states)
+      .filter(([id]) => {
+        if (!domains.length) return true;
+        return domains.includes(this._domain(id));
+      })
+      .map(([id, state]) => ({
+        id,
+        name: state.attributes?.friendly_name || id,
+      }))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, "de")
+      );
+
+    return result;
+  }
+
+  _entitySelect(key, label, domains = [], description = "") {
+    const current = this._entity(key);
+    const entities = this._entityOptions(domains);
+
     return `
-      <div class="metric">
-        <span>${label}</span>
-        <b>
-          ${this._v(id)}
-          ${this._unit(id)}
-        </b>
+      <div class="entity-setting">
+        <label>${label}</label>
+
+        ${
+          description
+            ? `<div class="setting-description">${description}</div>`
+            : ""
+        }
+
+        <select data-entity-key="${key}">
+          <option value="">-- Keine Entität --</option>
+
+          ${entities
+            .map(
+              (entity) => `
+                <option
+                  value="${this._escape(entity.id)}"
+                  ${entity.id === current ? "selected" : ""}
+                >
+                  ${this._escape(entity.name)} -- ${this._escape(entity.id)}
+                </option>
+              `
+            )
+            .join("")}
+        </select>
       </div>
     `;
   }
 
-  _tabs() {
-    const names = {
-      pv: "PV",
-      grid: "Netz",
-      battery: "Batterie",
-      wallbox: "Wallbox",
-      vehicle: "Fahrzeug",
-      heatpump: "Wärmepumpe",
-      climate: "Klima",
-    };
+  _checkbox(module, label, description = "") {
+    const enabled = this._enabled(module);
 
-    return [
-      ["overview", "Übersicht"],
-      ...(
-        this._data.modules || []
-      )
-        .filter(
-          (module) =>
-            module !== "energy"
-        )
-        .map(
-          (module) => [
-            module,
-            names[module] || module,
-          ]
-        ),
-      ["settings", "⚙️ Einstellungen"],
-    ];
+    return `
+      <div class="module-switch">
+        <label class="switch-row">
+          <input
+            type="checkbox"
+            data-module="${module}"
+            ${enabled ? "checked" : ""}
+          />
+
+          <span class="switch-box"></span>
+
+          <span class="switch-text">
+            <strong>${label}</strong>
+            ${
+              description
+                ? `<small>${description}</small>`
+                : ""
+            }
+          </span>
+        </label>
+      </div>
+    `;
+  }
+
+  _escape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
   }
 
   _render() {
-    if (!this._hass) {
-      return;
-    }
-
-    const tabs = this._tabs();
+    if (!this._hass) return;
 
     this.innerHTML = `
       <style>
         :host {
           display: block;
-          color: #eef5ff;
+          min-height: 100vh;
+          background:
+            radial-gradient(circle at 50% 0%, #142a48 0%, #07111f 48%, #040a12 100%);
+          color: #ffffff;
           font-family:
-            var(
-              --paper-font-body1_-_font-family,
-              Arial
-            );
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            Roboto,
+            Arial,
+            sans-serif;
+        }
+
+        * {
+          box-sizing: border-box;
         }
 
         .app {
-          background:
-            linear-gradient(
-              145deg,
-              #06101e,
-              #0b1b31
-            );
-          border:
-            1px solid #1e3a59;
-          border-radius: 24px;
-          padding: 18px;
-          min-height: 72vh;
+          min-height: 100vh;
+          padding: 22px;
+        }
+
+        .header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          margin-bottom: 20px;
         }
 
         .brand {
-          text-align: center;
-        }
-
-        .brand img {
-          max-width: 260px;
-          max-height: 68px;
-          border-radius: 12px;
-        }
-
-        .sub {
-          text-align: center;
-          opacity: .72;
-          margin: 5px 0 14px;
-        }
-
-        nav {
           display: flex;
-          gap: 7px;
-          overflow: auto;
-          padding-bottom: 12px;
+          align-items: center;
+          gap: 16px;
         }
 
-        button {
-          background: #122741;
-          color: #e7f1ff;
-          border:
-            1px solid #2a4766;
+        .brand-logo {
+          width: 170px;
+          max-height: 65px;
+          object-fit: contain;
+          object-position: left center;
+          filter: drop-shadow(0 0 12px rgba(0, 180, 255, .25));
+        }
+
+        .brand-title {
+          font-size: 20px;
+          font-weight: 700;
+          letter-spacing: .4px;
+        }
+
+        .brand-subtitle {
+          margin-top: 4px;
+          color: #8ca5bd;
+          font-size: 13px;
+        }
+
+        .clock {
+          color: #9eb2c7;
+          font-size: 13px;
+          text-align: right;
+        }
+
+        .tabs {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-bottom: 22px;
+        }
+
+        .tab {
+          border: 1px solid rgba(120,160,200,.18);
+          background: rgba(14,29,48,.82);
+          color: #91a7bc;
+          padding: 10px 15px;
           border-radius: 12px;
-          padding: 10px 13px;
-          white-space: nowrap;
           cursor: pointer;
+          transition: .2s;
         }
 
-        button.active {
-          background: #1c486d;
-          border-color: #60c7ff;
+        .tab:hover {
+          border-color: rgba(0,190,255,.4);
+          color: white;
         }
 
-        .grid {
-          display: grid;
-          grid-template-columns:
-            repeat(
-              auto-fit,
-              minmax(210px, 1fr)
-            );
-          gap: 12px;
+        .tab.active {
+          color: white;
+          border-color: rgba(0,190,255,.55);
+          background: rgba(0,150,220,.16);
+          box-shadow: 0 0 18px rgba(0,160,255,.12);
         }
 
-        .card {
+        .flow-card,
+        .card,
+        .settings-card {
           background:
-            rgba(
-              14,
-              34,
-              57,
-              .86
+            linear-gradient(
+              145deg,
+              rgba(17,35,57,.96),
+              rgba(7,17,30,.96)
             );
-          border:
-            1px solid #234463;
-          border-radius: 18px;
-          padding: 16px;
+          border: 1px solid rgba(120,160,200,.16);
+          border-radius: 20px;
+          box-shadow:
+            0 16px 50px rgba(0,0,0,.22),
+            inset 0 1px 0 rgba(255,255,255,.025);
         }
 
-        .muted {
-          opacity: .65;
+        .flow-card {
+          padding: 24px;
+          min-height: 420px;
         }
 
-        .metric {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom:
-            1px solid #213b56;
-        }
-
-        .metric b {
-          font-variant-numeric:
-            tabular-nums;
+        .section-title {
+          font-size: 18px;
+          font-weight: 700;
+          margin-bottom: 18px;
         }
 
         .flow {
-          height: 300px;
-          position: relative;
-          margin: 10px 0;
-          border-radius: 22px;
-          background:
-            radial-gradient(
-              circle at center,
-              #143450,
-              #081424
-            );
-          overflow: hidden;
+          min-height: 320px;
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          grid-template-rows: 1fr 1fr;
+          gap: 20px;
+          align-items: center;
         }
 
-        .node {
-          position: absolute;
-          padding: 13px 16px;
-          border-radius: 14px;
-          background: #102944;
-          border:
-            1px solid #52b9ef;
-          box-shadow:
-            0 0 18px
-            rgba(
-              70,
-              180,
-              240,
-              .2
-            );
+        .energy-node {
+          min-width: 130px;
+          min-height: 105px;
+          padding: 16px;
+          border-radius: 18px;
+          background: rgba(9,22,37,.9);
+          border: 1px solid rgba(130,160,190,.15);
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
           text-align: center;
         }
 
-        .node small {
-          display: block;
-          opacity: .7;
-          margin-top: 4px;
+        .energy-icon {
+          font-size: 28px;
+          margin-bottom: 7px;
+        }
+
+        .energy-name {
+          color: #91a7bc;
+          font-size: 12px;
+          margin-bottom: 4px;
+        }
+
+        .energy-value {
+          font-size: 18px;
+          font-weight: 700;
         }
 
         .pv {
-          left: 4%;
-          top: 8%;
+          border-color: rgba(40,220,130,.35);
+          box-shadow: 0 0 25px rgba(40,220,130,.07);
+        }
+
+        .grid {
+          border-color: rgba(255,70,80,.35);
+        }
+
+        .battery {
+          border-color: rgba(70,150,255,.35);
         }
 
         .house {
-          left: 40%;
-          top: 40%;
+          border-color: rgba(255,255,255,.18);
+          grid-column: 2;
+          grid-row: 1 / span 2;
         }
 
-        .bat {
-          right: 4%;
-          top: 8%;
+        .pv-node {
+          grid-column: 1;
+          grid-row: 1;
         }
 
-        .gridn {
-          left: 4%;
-          bottom: 8%;
+        .grid-node {
+          grid-column: 3;
+          grid-row: 1;
         }
 
-        .wall {
-          right: 4%;
-          bottom: 8%;
+        .battery-node {
+          grid-column: 1;
+          grid-row: 2;
         }
 
-        .line {
-          position: absolute;
-          height: 4px;
-          border-radius: 3px;
-          background:
-            repeating-linear-gradient(
-              90deg,
-              #57d77d 0 12px,
-              transparent 12px 24px
-            );
-          animation:
-            dash .7s linear infinite;
-          filter:
-            drop-shadow(
-              0 0 5px #57d77d
-            );
+        .wallbox-node {
+          grid-column: 3;
+          grid-row: 2;
         }
 
-        .line.inactive {
-          background: #637181;
-          animation: none;
-          filter: none;
-          opacity: .22;
+        .connection {
+          position: relative;
         }
 
-        .flowlabel {
-          position: absolute;
-          font-size: 11px;
-          font-weight: 700;
-          padding: 3px 6px;
-          border-radius: 8px;
-          background: #081424cc;
+        .connection::after {
+          content: "";
+          display: block;
+          height: 3px;
+          margin: 8px 0;
+          border-radius: 5px;
+          background: rgba(130,160,190,.14);
         }
 
-        .flowlabel.inactive {
-          opacity: .35;
+        .connection.active-green::after {
+          background: linear-gradient(
+            90deg,
+            transparent,
+            #39e58a,
+            transparent
+          );
+          box-shadow: 0 0 10px rgba(57,229,138,.7);
         }
 
-        .legend {
-          display: flex;
+        .connection.active-red::after {
+          background: linear-gradient(
+            90deg,
+            transparent,
+            #ff5964,
+            transparent
+          );
+          box-shadow: 0 0 10px rgba(255,89,100,.6);
+        }
+
+        .connection.active-blue::after {
+          background: linear-gradient(
+            90deg,
+            transparent,
+            #4e9dff,
+            transparent
+          );
+          box-shadow: 0 0 10px rgba(78,157,255,.6);
+        }
+
+        .summary {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
           gap: 14px;
-          flex-wrap: wrap;
-          justify-content: center;
-          margin: 8px 0 14px;
-          opacity: .82;
+          margin-top: 18px;
+        }
+
+        .summary .card {
+          padding: 18px;
+        }
+
+        .card-label {
+          color: #849bb1;
           font-size: 12px;
+          margin-bottom: 7px;
         }
 
-        .red {
-          background:
-            repeating-linear-gradient(
-              90deg,
-              #ff5964 0 12px,
-              transparent 12px 24px
-            );
-          filter:
-            drop-shadow(
-              0 0 5px #ff5964
-            );
+        .card-value {
+          font-size: 22px;
+          font-weight: 700;
         }
 
-        .blue {
-          background:
-            repeating-linear-gradient(
-              90deg,
-              #5bb8ff 0 12px,
-              transparent 12px 24px
-            );
-          filter:
-            drop-shadow(
-              0 0 5px #5bb8ff
-            );
+        .settings-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 18px;
         }
 
-        .l1 {
-          left: 20%;
-          top: 26%;
-          width: 22%;
+        .settings-card {
+          padding: 22px;
         }
 
-        .l2 {
-          left: 57%;
-          top: 26%;
-          width: 22%;
+        .settings-card.full {
+          grid-column: 1 / -1;
         }
 
-        .l3 {
-          left: 20%;
-          top: 66%;
-          width: 22%;
+        .settings-card h3 {
+          margin: 0 0 6px;
+          font-size: 17px;
         }
 
-        .l4 {
-          left: 57%;
-          top: 66%;
-          width: 22%;
+        .settings-card > p {
+          margin: 0 0 18px;
+          color: #8299af;
+          font-size: 13px;
         }
 
-        .l1 + .flowlabel {
-          left: 27%;
-          top: 20%;
+        .module-switch {
+          border-bottom: 1px solid rgba(120,160,200,.1);
         }
 
-        .l2 + .flowlabel {
-          left: 64%;
-          top: 20%;
+        .module-switch:last-child {
+          border-bottom: none;
         }
 
-        .l3 + .flowlabel {
-          left: 27%;
-          top: 70%;
+        .switch-row {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          padding: 13px 0;
+          cursor: pointer;
         }
 
-        .l4 + .flowlabel {
-          left: 64%;
-          top: 70%;
+        .switch-row input {
+          display: none;
         }
 
-        @keyframes dash {
-          to {
-            background-position: 24px 0;
+        .switch-box {
+          width: 43px;
+          height: 24px;
+          border-radius: 20px;
+          background: #26384a;
+          position: relative;
+          flex: 0 0 auto;
+          transition: .2s;
+        }
+
+        .switch-box::after {
+          content: "";
+          position: absolute;
+          width: 18px;
+          height: 18px;
+          top: 3px;
+          left: 3px;
+          border-radius: 50%;
+          background: #8fa1b2;
+          transition: .2s;
+        }
+
+        .switch-row input:checked + .switch-box {
+          background: #08a9ec;
+          box-shadow: 0 0 14px rgba(8,169,236,.35);
+        }
+
+        .switch-row input:checked + .switch-box::after {
+          left: 22px;
+          background: white;
+        }
+
+        .switch-text {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .switch-text small {
+          color: #71899f;
+          font-size: 11px;
+        }
+
+        .entity-setting {
+          margin-bottom: 16px;
+        }
+
+        .entity-setting:last-child {
+          margin-bottom: 0;
+        }
+
+        .entity-setting label {
+          display: block;
+          margin-bottom: 7px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #c4d2df;
+        }
+
+        .setting-description {
+          color: #71889d;
+          font-size: 11px;
+          margin-bottom: 7px;
+        }
+
+        select,
+        input[type="text"],
+        input[type="number"] {
+          width: 100%;
+          border-radius: 11px;
+          border: 1px solid rgba(120,160,200,.2);
+          background: #0a1829;
+          color: white;
+          padding: 11px 12px;
+          outline: none;
+        }
+
+        select:focus,
+        input:focus {
+          border-color: rgba(0,180,255,.55);
+          box-shadow: 0 0 0 2px rgba(0,180,255,.08);
+        }
+
+        .save-row {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 14px;
+          margin-top: 20px;
+        }
+
+        .save-button {
+          border: none;
+          border-radius: 12px;
+          padding: 12px 22px;
+          color: white;
+          background: linear-gradient(135deg, #008bd0, #00b7ee);
+          font-weight: 700;
+          cursor: pointer;
+          box-shadow: 0 8px 22px rgba(0,160,230,.2);
+        }
+
+        .save-button:hover {
+          filter: brightness(1.1);
+        }
+
+        .message {
+          color: #70e4a6;
+          font-size: 13px;
+        }
+
+        .disabled-note {
+          padding: 15px;
+          border-radius: 12px;
+          background: rgba(255,255,255,.025);
+          color: #70869b;
+          font-size: 13px;
+        }
+
+        .vehicle-image {
+          width: 100%;
+          max-height: 220px;
+          object-fit: cover;
+          border-radius: 15px;
+          margin-bottom: 15px;
+        }
+
+        .upload-label {
+          display: inline-block;
+          padding: 10px 14px;
+          border-radius: 10px;
+          background: rgba(0,150,220,.15);
+          border: 1px solid rgba(0,180,240,.25);
+          cursor: pointer;
+          font-size: 13px;
+        }
+
+        .upload-label input {
+          display: none;
+        }
+
+        .empty {
+          padding: 40px 20px;
+          text-align: center;
+          color: #7890a6;
+        }
+
+        @media (max-width: 900px) {
+          .summary {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .settings-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .settings-card.full {
+            grid-column: auto;
           }
         }
 
-        .weather {
-          text-align: center;
-        }
+        @media (max-width: 650px) {
+          .app {
+            padding: 14px;
+          }
 
-        .weather b {
-          font-size: 24px;
-        }
+          .header {
+            align-items: flex-start;
+          }
 
-        .upload input {
-          width: 100%;
-          margin-top: 10px;
+          .brand-logo {
+            width: 130px;
+          }
+
+          .flow {
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: repeat(3, auto);
+          }
+
+          .house {
+            grid-column: 1 / span 2;
+            grid-row: 2;
+          }
+
+          .pv-node {
+            grid-column: 1;
+            grid-row: 1;
+          }
+
+          .grid-node {
+            grid-column: 2;
+            grid-row: 1;
+          }
+
+          .battery-node {
+            grid-column: 1;
+            grid-row: 3;
+          }
+
+          .wallbox-node {
+            grid-column: 2;
+            grid-row: 3;
+          }
         }
       </style>
 
       <div class="app">
+        ${this._renderHeader()}
+        ${this._renderTabs()}
+        ${this._renderContent()}
+      </div>
+    `;
 
+    this._attachEvents();
+  }
+
+  _renderHeader() {
+    const now = new Date();
+
+    const date = now.toLocaleDateString("de-DE", {
+      weekday: "long",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+
+    const time = now.toLocaleTimeString("de-DE", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    return `
+      <div class="header">
         <div class="brand">
           <img
-            src="/local/lakis_solarworld/customer_logo.jpeg"
+            class="brand-logo"
+            src="/api/lakis_solarworld/static/customer_logo.jpeg"
             alt="LAKIS SOLARWORLD"
-          >
+            onerror="this.style.display='none';"
+          />
+
+          <div>
+            <div class="brand-title">
+              LAKIS SOLARWORLD
+            </div>
+
+            <div class="brand-subtitle">
+              Energy Dashboard PRO
+            </div>
+          </div>
         </div>
 
-        <div class="sub">
-          ${this._dateLine()}
+        <div class="clock">
+          ${date}<br>
+          ${time} Uhr
         </div>
-
-        <nav>
-          ${tabs
-            .map(
-              ([key, name]) => `
-                <button
-                  data-tab="${key}"
-                  class="${
-                    this._tab === key
-                      ? "active"
-                      : ""
-                  }"
-                >
-                  ${name}
-                </button>
-              `
-            )
-            .join("")}
-        </nav>
-
-        ${
-          this._tab === "overview"
-            ? this._overview()
-            : this._tab === "settings"
-              ? this._settings()
-              : this._module(
-                  this._tab
-                )
-        }
-
-      </div>
-    `;
-
-    this
-      .querySelectorAll(
-        "[data-tab]"
-      )
-      .forEach(
-        (button) => {
-          button.onclick = () => {
-            this._tab =
-              button.dataset.tab;
-
-            this._render();
-          };
-        }
-      );
-
-    const file =
-      this.querySelector(
-        "#vehicle-file"
-      );
-
-    if (file) {
-      file.onchange = (event) =>
-        this._upload(
-          event.target.files[0]
-        );
-    }
-
-    const save =
-      this.querySelector(
-        "#save-modules"
-      );
-
-    if (save) {
-      save.onclick = () =>
-        this._save({
-          modules: [
-            ...this.querySelectorAll(
-              "input[name=mod]:checked"
-            ),
-          ].map(
-            (input) =>
-              input.value
-          ),
-        });
-    }
-  }
-
-  _dateLine() {
-    const date = new Date();
-
-    const weather =
-      this._weather;
-
-    const location =
-      this._hass.config
-        .location_name ||
-      this._hass.config.location ||
-      "Home Assistant";
-
-    return `
-      ${date.toLocaleDateString(
-        "de-DE",
-        {
-          weekday: "long",
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        }
-      )}
-      ·
-      ${date.toLocaleTimeString(
-        "de-DE",
-        {
-          hour: "2-digit",
-          minute: "2-digit",
-        }
-      )}
-      ·
-      ${location}
-      ${
-        weather
-          ? ` · ${
-              weather.attributes
-                ?.friendly_name ||
-              "Wetter"
-            }`
-          : ""
-      }
-    `;
-  }
-
-  _num(id) {
-    const value =
-      parseFloat(
-        this._v(id)
-      );
-
-    return Number.isFinite(value)
-      ? value
-      : 0;
-  }
-
-  _overview() {
-    const pv =
-      this._num(
-        this._data.pv_power
-      );
-
-    const house =
-      Math.max(
-        0,
-        this._num(
-          this._data.house_power
-        )
-      );
-
-    const grid =
-      this._num(
-        this._data.grid_power
-      );
-
-    const batt =
-      this._num(
-        this._data.battery_power
-      );
-
-    const wall =
-      Math.max(
-        0,
-        this._num(
-          this._data.wallbox_power
-        )
-      );
-
-    const pvToHouse =
-      Math.min(
-        Math.max(pv, 0),
-        house
-      );
-
-    const pvSurplus =
-      Math.max(
-        0,
-        pv - house
-      );
-
-    const pvToBattery =
-      Math.max(
-        0,
-        Math.min(
-          pvSurplus,
-          Math.max(
-            0,
-            batt
-          )
-        )
-      );
-
-    const pvToWall =
-      Math.max(
-        0,
-        Math.min(
-          Math.max(
-            0,
-            pvSurplus -
-              pvToBattery
-          ),
-          wall
-        )
-      );
-
-    const batteryToHouse =
-      batt < 0
-        ? Math.min(
-            Math.abs(batt),
-            house
-          )
-        : 0;
-
-    const gridToHouse =
-      grid > 50
-        ? Math.min(
-            grid,
-            Math.max(
-              0,
-              house -
-                pvToHouse -
-                batteryToHouse
-            )
-          )
-        : 0;
-
-    const gridExport =
-      grid < -50
-        ? Math.abs(grid)
-        : 0;
-
-    const line = (
-      classes,
-      label,
-      power
-    ) => `
-      <div
-        class="line ${classes}
-        ${
-          Math.abs(power) < 50
-            ? "inactive"
-            : ""
-        }"
-      ></div>
-
-      <span
-        class="flowlabel
-        ${
-          Math.abs(power) < 50
-            ? "inactive"
-            : ""
-        }"
-      >
-        ${label}
-      </span>
-    `;
-
-    return `
-      <div class="flow">
-
-        <div class="node pv">
-          ☀️ PV
-          <small>
-            ${this._v(
-              this._data.pv_power
-            )}
-            ${this._unit(
-              this._data.pv_power
-            )}
-          </small>
-        </div>
-
-        <div class="node house">
-          🏠 Haus
-          <small>
-            ${this._v(
-              this._data.house_power
-            )}
-            ${this._unit(
-              this._data.house_power
-            )}
-          </small>
-        </div>
-
-        <div class="node bat">
-          🔋 Batterie
-          <small>
-            ${this._v(
-              this._data.battery_soc
-            )}
-            %
-            ·
-            ${this._v(
-              this._data.battery_power
-            )}
-            ${this._unit(
-              this._data.battery_power
-            )}
-          </small>
-        </div>
-
-        <div class="node gridn">
-          🔌 Netz
-          <small>
-            ${this._v(
-              this._data.grid_power
-            )}
-            ${this._unit(
-              this._data.grid_power
-            )}
-          </small>
-        </div>
-
-        <div class="node wall">
-          🚗 Wallbox
-          <small>
-            ${this._v(
-              this._data.wallbox_power
-            )}
-            ${this._unit(
-              this._data.wallbox_power
-            )}
-          </small>
-        </div>
-
-        ${line(
-          "l1 green",
-          `${pvToHouse.toFixed(0)} W`,
-          pvToHouse
-        )}
-
-        ${line(
-          `l2 ${
-            pvToBattery > 0
-              ? "green"
-              : "blue"
-          }`,
-          `${(
-            pvToBattery ||
-            batteryToHouse
-          ).toFixed(0)} W`,
-          pvToBattery ||
-            batteryToHouse
-        )}
-
-        ${line(
-          `l3 ${
-            gridToHouse > 0
-              ? "red"
-              : "green"
-          }`,
-          `${(
-            gridToHouse ||
-            gridExport
-          ).toFixed(0)} W`,
-          gridToHouse ||
-            gridExport
-        )}
-
-        ${line(
-          `l4 ${
-            pvToWall > 0
-              ? "green"
-              : "red"
-          }`,
-          `${(
-            pvToWall ||
-            Math.max(
-              0,
-              wall -
-                pvToWall
-            )
-          ).toFixed(0)} W`,
-          pvToWall ||
-            Math.max(
-              0,
-              wall -
-                pvToWall
-            )
-        )}
-
-      </div>
-
-      <div class="legend">
-        <span>
-          🟢 PV / erneuerbar
-        </span>
-        <span>
-          🔴 Netzbezug
-        </span>
-        <span>
-          🔵 Batterie
-        </span>
-        <span>
-          ⚪ kein relevanter Fluss
-        </span>
-      </div>
-
-      <div class="grid">
-
-        <div class="card">
-          ${this._metric(
-            this._data.pv_power,
-            "PV"
-          )}
-        </div>
-
-        <div class="card">
-          ${this._metric(
-            this._data.house_power,
-            "Hausverbrauch"
-          )}
-        </div>
-
-        <div class="card">
-          ${this._metric(
-            this._data.grid_power,
-            "Netz"
-          )}
-        </div>
-
-        <div class="card">
-          ${this._metric(
-            this._data.battery_soc,
-            "Batterie SOC"
-          )}
-          ${this._metric(
-            this._data.battery_power,
-            "Batterieleistung"
-          )}
-        </div>
-
-        <div class="card">
-          ${this._metric(
-            this._data.wallbox_power,
-            "Wallbox"
-          )}
-        </div>
-
-        <div class="card weather">
-          ${
-            this._weather
-              ? `
-                <b>
-                  🌤️
-                  ${this._weather.state}
-                </b>
-
-                <div>
-                  ${
-                    this._weather
-                      .attributes
-                      ?.temperature ??
-                    "--"
-                  }
-                  ${
-                    this._weather
-                      .attributes
-                      ?.temperature_unit ||
-                    "°C"
-                  }
-                </div>
-              `
-              : `
-                <div class="muted">
-                  Keine Wetter-Entity
-                  vorhanden
-                </div>
-              `
-          }
-        </div>
-
       </div>
     `;
   }
 
-  _settings() {
-    const modules = [
-      ["energy", "Energie / Haus"],
+  _renderTabs() {
+    const tabs = [
+      ["overview", "Übersicht"],
       ["pv", "PV"],
       ["grid", "Netz"],
       ["battery", "Batterie"],
-      ["wallbox", "Wallbox"],
-      ["vehicle", "Fahrzeug"],
-      ["heatpump", "Wärmepumpe"],
-      ["climate", "Klimaanlagen"],
+      ["settings", "⚙ Einstellungen"],
     ];
 
     return `
-      <div class="grid">
+      <div class="tabs">
+        ${tabs
+          .map(
+            ([id, label]) => `
+              <button
+                class="tab ${this._tab === id ? "active" : ""}"
+                data-tab="${id}"
+              >
+                ${label}
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    `;
+  }
 
-        <div class="card">
+  _renderContent() {
+    if (this._loading) {
+      return `<div class="empty">Dashboard wird geladen …</div>`;
+    }
 
-          <h2>
-            Installation
-          </h2>
+    switch (this._tab) {
+      case "pv":
+        return this._renderPV();
 
-          <p class="muted">
-            Nur aktivierte Module
-            werden angezeigt.
-          </p>
+      case "grid":
+        return this._renderGrid();
+
+      case "battery":
+        return this._renderBattery();
+
+      case "settings":
+        return this._renderSettings();
+
+      default:
+        return this._renderOverview();
+    }
+  }
+
+  _renderOverview() {
+    const pv = this._number(this._entity("pv_power"));
+    const house = this._number(this._entity("house_power"));
+    const grid = this._number(this._entity("grid_power"));
+    const battery = this._number(this._entity("battery_power"));
+    const soc = this._number(this._entity("battery_soc"));
+    const wallbox = this._number(this._entity("wallbox_power"));
+
+    return `
+      <div class="flow-card">
+        <div class="section-title">
+          Energiefluss
+        </div>
+
+        <div class="flow">
+
+          <div class="energy-node pv pv-node">
+            <div class="energy-icon">☀️</div>
+            <div class="energy-name">PV</div>
+            <div class="energy-value">
+              ${this._formatPower(pv)}
+            </div>
+          </div>
+
+          <div class="energy-node grid grid-node">
+            <div class="energy-icon">⚡</div>
+            <div class="energy-name">Netz</div>
+            <div class="energy-value">
+              ${this._formatPower(grid)}
+            </div>
+          </div>
+
+          <div class="energy-node house">
+            <div class="energy-icon">🏠</div>
+            <div class="energy-name">Haus</div>
+            <div class="energy-value">
+              ${this._formatPower(house)}
+            </div>
+          </div>
+
+          <div class="energy-node battery battery-node">
+            <div class="energy-icon">🔋</div>
+            <div class="energy-name">Batterie</div>
+            <div class="energy-value">
+              ${this._formatPercent(soc)}
+            </div>
+
+            <div style="margin-top:5px;color:#7690a7;font-size:11px;">
+              ${this._formatPower(battery)}
+            </div>
+          </div>
 
           ${
-            modules
-              .map(
-                ([key, name]) => `
-                  <label
-                    style="
-                      display:block;
-                      padding:8px
-                    "
-                  >
-                    <input
-                      type="checkbox"
-                      name="mod"
-                      value="${key}"
-                      ${
-                        this._data
-                          .modules
-                          ?.includes(
-                            key
-                          )
-                          ? "checked"
-                          : ""
-                      }
-                    >
-                    ${name}
-                  </label>
-                `
-              )
-              .join("")
+            this._enabled("wallbox")
+              ? `
+                <div class="energy-node wallbox-node">
+                  <div class="energy-icon">🚗</div>
+                  <div class="energy-name">Wallbox</div>
+                  <div class="energy-value">
+                    ${this._formatPower(wallbox)}
+                  </div>
+                </div>
+              `
+              : `
+                <div class="energy-node wallbox-node">
+                  <div class="energy-icon">--</div>
+                  <div class="energy-name">Wallbox</div>
+                  <div class="energy-value">deaktiviert</div>
+                </div>
+              `
           }
 
-          <button
-            id="save-modules"
-          >
-            Module speichern
-          </button>
+        </div>
+      </div>
 
+      <div class="summary">
+
+        <div class="card">
+          <div class="card-label">PV-Leistung</div>
+          <div class="card-value">${this._formatPower(pv)}</div>
         </div>
 
         <div class="card">
+          <div class="card-label">Hausverbrauch</div>
+          <div class="card-value">${this._formatPower(house)}</div>
+        </div>
 
-          <h2>
-            Wetter
-          </h2>
+        <div class="card">
+          <div class="card-label">Netz</div>
+          <div class="card-value">${this._formatPower(grid)}</div>
+        </div>
 
-          <p class="muted">
-            Automatisch aus
-            vorhandenen
-            Home-Assistant
-            weather.*
-            Entities.
-          </p>
-
-          ${
-            this._weather
-              ? `✓ ${this._weather.entity_id}`
-              : "Keine Wetter-Entity gefunden."
-          }
-
+        <div class="card">
+          <div class="card-label">Batterie</div>
+          <div class="card-value">${this._formatPercent(soc)}</div>
         </div>
 
       </div>
     `;
   }
 
-  _module(module) {
-    if (module === "battery") {
-      return `
-        <div class="card">
-          <h2>
-            🔋 Batterie
-          </h2>
+  _renderPV() {
+    const pv = this._number(this._entity("pv_power"));
 
-          ${this._metric(
-            this._data.battery_soc,
-            "SOC"
+    return `
+      <div class="settings-card">
+        <h3>☀️ Photovoltaik</h3>
+        <p>Aktuelle PV-Leistung</p>
+
+        <div class="card-value">
+          ${this._formatPower(pv)}
+        </div>
+
+        <br>
+
+        ${this._entitySelect(
+          "pv_power",
+          "PV-Leistungsentität",
+          ["sensor"],
+          "Entität mit der aktuellen PV-Leistung in Watt."
+        )}
+      </div>
+    `;
+  }
+
+  _renderGrid() {
+    const grid = this._number(this._entity("grid_power"));
+
+    return `
+      <div class="settings-card">
+        <h3>⚡ Netz</h3>
+        <p>Netzbezug bzw. Einspeisung</p>
+
+        <div class="card-value">
+          ${this._formatPower(grid)}
+        </div>
+
+        <br>
+
+        ${this._entitySelect(
+          "grid_power",
+          "Netzleistungsentität",
+          ["sensor"],
+          "Positiv = Netzbezug, negativ = Einspeisung."
+        )}
+      </div>
+    `;
+  }
+
+  _renderBattery() {
+    const soc = this._number(this._entity("battery_soc"));
+    const power = this._number(this._entity("battery_power"));
+
+    return `
+      <div class="settings-grid">
+
+        <div class="settings-card">
+          <h3>🔋 Ladezustand</h3>
+          <p>Aktueller Batteriezustand</p>
+
+          <div class="card-value">
+            ${this._formatPercent(soc)}
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>🔋 Batterieleistung</h3>
+          <p>Aktuelle Lade-/Entladeleistung</p>
+
+          <div class="card-value">
+            ${this._formatPower(power)}
+          </div>
+        </div>
+
+        <div class="settings-card full">
+          ${this._entitySelect(
+            "battery_soc",
+            "Batterie SOC",
+            ["sensor"],
+            "Batterie-Ladezustand in Prozent."
           )}
 
-          ${this._metric(
-            this._data.battery_power,
-            "Leistung"
+          ${this._entitySelect(
+            "battery_power",
+            "Batterieleistung",
+            ["sensor"],
+            "Positiv = Laden, negativ = Entladen."
           )}
         </div>
-      `;
-    }
 
-    if (module === "wallbox") {
-      return `
-        <div class="card">
+      </div>
+    `;
+  }
 
-          <h2>
-            🚗 Wallbox
-          </h2>
+  _renderSettings() {
+    return `
+      <div class="settings-grid">
 
-          ${this._metric(
-            this._data.wallbox_power,
-            "Ladeleistung"
+        <div class="settings-card">
+          <h3>⚙ Module</h3>
+          <p>
+            Hier kannst du die einzelnen Bereiche jederzeit aktivieren
+            oder deaktivieren.
+          </p>
+
+          ${this._checkbox(
+            "energy",
+            "Energie / Haus",
+            "Grundlage des Energie-Dashboards"
           )}
 
-          ${this._metric(
-            this._data.wallbox_status,
-            "Status"
+          ${this._checkbox(
+            "pv",
+            "Photovoltaik",
+            "PV-Leistung und PV-Daten"
           )}
 
+          ${this._checkbox(
+            "grid",
+            "Netz",
+            "Netzbezug und Einspeisung"
+          )}
+
+          ${this._checkbox(
+            "battery",
+            "Batterie",
+            "Speicher, SOC und Leistung"
+          )}
+
+          ${this._checkbox(
+            "wallbox",
+            "Wallbox",
+            "Ladeleistung und Wallbox-Status"
+          )}
+
+          ${this._checkbox(
+            "vehicle",
+            "Fahrzeug",
+            "Fahrzeugdaten und Ladezustand"
+          )}
+
+          ${this._checkbox(
+            "heatpump",
+            "Wärmepumpe",
+            "Wärmepumpen-Daten"
+          )}
+
+          ${this._checkbox(
+            "climate",
+            "Klimaanlagen",
+            "Eine oder mehrere Climate-Entitäten"
+          )}
         </div>
-      `;
-    }
 
-    if (module === "vehicle") {
-      return `
-        <div class="grid">
+        ${
+          this._enabled("energy")
+            ? `
+              <div class="settings-card">
+                <h3>🏠 Energie / Haus</h3>
+                <p>Grundlegende Leistungsdaten.</p>
 
-          <div class="card">
+                ${this._entitySelect(
+                  "house_power",
+                  "Hausverbrauch",
+                  ["sensor"],
+                  "Aktueller Hausverbrauch in Watt."
+                )}
+              </div>
+            `
+            : ""
+        }
 
-            <h2>
-              🚘
-              ${
-                this._data
-                  .vehicle_name ||
-                "Fahrzeug"
-              }
-            </h2>
+        ${
+          this._enabled("pv")
+            ? `
+              <div class="settings-card">
+                <h3>☀️ Photovoltaik</h3>
+                <p>PV-Leistungsdaten.</p>
 
-            ${this._metric(
-              this._data.vehicle_soc,
-              "SOC"
-            )}
+                ${this._entitySelect(
+                  "pv_power",
+                  "PV-Leistung",
+                  ["sensor"],
+                  "Aktuelle PV-Leistung."
+                )}
+              </div>
+            `
+            : ""
+        }
 
-            ${this._metric(
-              this._data.vehicle_status,
-              "Status"
-            )}
+        ${
+          this._enabled("grid")
+            ? `
+              <div class="settings-card">
+                <h3>⚡ Netz</h3>
+                <p>Netzfluss am Netzanschlusspunkt.</p>
 
-          </div>
+                ${this._entitySelect(
+                  "grid_power",
+                  "Netzleistung",
+                  ["sensor"],
+                  "Positiv = Bezug, negativ = Einspeisung."
+                )}
+              </div>
+            `
+            : ""
+        }
 
-          <div class="card upload">
+        ${
+          this._enabled("battery")
+            ? `
+              <div class="settings-card">
+                <h3>🔋 Batterie</h3>
+                <p>Batterie-Entitäten.</p>
 
-            ${
-              this._data.vehicle_image
-                ? `
-                  <img
-                    src="${
-                      this._data
-                        .vehicle_image
-                    }"
-                    style="
-                      width:100%;
-                      max-height:260px;
-                      object-fit:cover;
-                      border-radius:14px
-                    "
-                  >
-                `
-                : ""
-            }
+                ${this._entitySelect(
+                  "battery_soc",
+                  "Batterie SOC",
+                  ["sensor"],
+                  "Ladezustand in Prozent."
+                )}
 
-            <input
-              id="vehicle-file"
-              type="file"
-              accept="
-                image/jpeg,
-                image/png,
-                image/webp
-              "
-            >
+                ${this._entitySelect(
+                  "battery_power",
+                  "Batterieleistung",
+                  ["sensor"],
+                  "Positiv = Laden, negativ = Entladen."
+                )}
 
-          </div>
+                ${this._entitySelect(
+                  "battery_target_soc",
+                  "Ziel-SOC",
+                  ["sensor", "number"],
+                  "Optionaler Ziel-Ladezustand."
+                )}
+              </div>
+            `
+            : ""
+        }
 
+        ${
+          this._enabled("wallbox")
+            ? `
+              <div class="settings-card">
+                <h3>🚙 Wallbox</h3>
+                <p>Wallbox frei aus Home Assistant auswählen.</p>
+
+                ${this._entitySelect(
+                  "wallbox_power",
+                  "Ladeleistung",
+                  ["sensor"],
+                  "Aktuelle Ladeleistung."
+                )}
+
+                ${this._entitySelect(
+                  "wallbox_status",
+                  "Wallbox Status",
+                  ["sensor", "binary_sensor"],
+                  "Optionaler Status der Wallbox."
+                )}
+
+                ${this._entitySelect(
+                  "wallbox_control",
+                  "Wallbox Steuerung",
+                  ["switch", "button"],
+                  "Optional: Start/Stop bzw. Freigabe."
+                )}
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          this._enabled("vehicle")
+            ? `
+              <div class="settings-card">
+                <h3>🚗 Fahrzeug</h3>
+                <p>Fahrzeug mit der Wallbox verknüpfen.</p>
+
+                ${this._textInput(
+                  "vehicle_name",
+                  "Fahrzeugname",
+                  this._config.vehicle_name || ""
+                )}
+
+                ${this._entitySelect(
+                  "vehicle_soc",
+                  "Fahrzeug SOC",
+                  ["sensor"],
+                  "Fahrzeug-Ladezustand."
+                )}
+
+                ${this._entitySelect(
+                  "vehicle_target_soc",
+                  "Fahrzeug Ziel-SOC",
+                  ["sensor", "number"],
+                  "Optionaler Ziel-SOC."
+                )}
+
+                ${this._entitySelect(
+                  "vehicle_status",
+                  "Fahrzeug Status",
+                  ["sensor", "binary_sensor"],
+                  "Optionaler Fahrzeugstatus."
+                )}
+
+                ${this._vehicleImageSection()}
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          this._enabled("heatpump")
+            ? `
+              <div class="settings-card">
+                <h3>♨️ Wärmepumpe</h3>
+                <p>Wärmepumpe frei aus Home Assistant auswählen.</p>
+
+                ${this._entitySelect(
+                  "heatpump_entity",
+                  "Wärmepumpe",
+                  ["climate"],
+                  "Climate-Entität der Wärmepumpe."
+                )}
+
+                ${this._entitySelect(
+                  "heatpump_power",
+                  "Elektrische Leistung",
+                  ["sensor"],
+                  "Optional."
+                )}
+
+                ${this._entitySelect(
+                  "heatpump_flow_temp",
+                  "Vorlauftemperatur",
+                  ["sensor"],
+                  "Optional."
+                )}
+
+                ${this._entitySelect(
+                  "heatpump_return_temp",
+                  "Rücklauftemperatur",
+                  ["sensor"],
+                  "Optional."
+                )}
+
+                ${this._entitySelect(
+                  "heatpump_outdoor_temp",
+                  "Außentemperatur",
+                  ["sensor"],
+                  "Optional."
+                )}
+
+                ${this._entitySelect(
+                  "heatpump_dhw_temp",
+                  "Warmwassertemperatur",
+                  ["sensor"],
+                  "Optional."
+                )}
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          this._enabled("climate")
+            ? `
+              <div class="settings-card">
+                <h3>❄️ Klimaanlagen</h3>
+                <p>
+                  Climate-Entitäten können frei ausgewählt werden.
+                </p>
+
+                ${this._entitySelect(
+                  "climate_1",
+                  "Klimaanlage 1",
+                  ["climate"]
+                )}
+
+                ${this._entitySelect(
+                  "climate_2",
+                  "Klimaanlage 2",
+                  ["climate"]
+                )}
+
+                ${this._entitySelect(
+                  "climate_3",
+                  "Klimaanlage 3",
+                  ["climate"]
+                )}
+
+                ${this._entitySelect(
+                  "climate_4",
+                  "Klimaanlage 4",
+                  ["climate"]
+                )}
+              </div>
+            `
+            : ""
+        }
+
+        <div class="settings-card">
+          <h3>🌤 Wetter</h3>
+          <p>Optionale Wetterentität.</p>
+
+          ${this._entitySelect(
+            "weather_entity",
+            "Wetter",
+            ["weather"],
+            "Wetterquelle aus Home Assistant."
+          )}
         </div>
-      `;
-    }
 
-    if (module === "heatpump") {
-      return `
-        <div class="grid">
-
-          <div class="card">
-
-            <h2>
-              🔥 Wärmepumpe
-            </h2>
-
-            ${this._metric(
-              this._data.heatpump_power,
-              "Leistung"
-            )}
-
-            ${this._metric(
-              this._data.heatpump_entity,
-              "Status"
-            )}
-
-          </div>
-
-          <div class="card">
-
-            ${this._metric(
-              this._data
-                .heatpump_outdoor_temp,
-              "Außen"
-            )}
-
-            ${this._metric(
-              this._data
-                .heatpump_flow_temp,
-              "Vorlauf"
-            )}
-
-            ${this._metric(
-              this._data
-                .heatpump_return_temp,
-              "Rücklauf"
-            )}
-
-          </div>
-
-        </div>
-      `;
-    }
-
-    if (module === "climate") {
-      return `
-        <div class="grid">
+        <div class="settings-card full">
+          <h3>💾 Konfiguration speichern</h3>
+          <p>
+            Die Änderungen werden in der LAKIS-Konfiguration gespeichert.
+          </p>
 
           ${
-            (
-              this._data
-                .climate_entities ||
-              []
-            )
-              .map(
-                (id) => `
-                  <div class="card">
-
-                    <h3>
-                      ${id}
-                    </h3>
-
-                    ${this._metric(
-                      id,
-                      "Status"
-                    )}
-
-                  </div>
-                `
-              )
-              .join("")
-          }
-
-          ${
-            (
-              this._data
-                .climate_entities ||
-              []
-            ).length === 0
-              ? `
-                <div class="card">
-                  Keine Klimaanlage
-                  konfiguriert.
-                </div>
-              `
+            this._message
+              ? `<div class="message">${this._escape(this._message)}</div>`
               : ""
           }
 
+          <div class="save-row">
+            <button class="save-button" id="save-config">
+              Änderungen speichern
+            </button>
+          </div>
         </div>
-      `;
-    }
-
-    return `
-      <div class="card">
-
-        <h2>
-          ${module.toUpperCase()}
-        </h2>
-
-        ${this._metric(
-          this._data[
-            module + "_power"
-          ],
-          "Leistung"
-        )}
 
       </div>
     `;
   }
 
-  async _save(patch) {
-    this._data = {
-      ...this._data,
-      ...patch,
-    };
+  _textInput(key, label, value) {
+    return `
+      <div class="entity-setting">
+        <label>${label}</label>
 
-    await this._hass.callWS({
-      type:
-        "lakis_solarworld/save_config",
-      entry_id: this._entry,
-      config: this._data,
+        <input
+          type="text"
+          data-text-key="${key}"
+          value="${this._escape(value)}"
+        />
+      </div>
+    `;
+  }
+
+  _vehicleImageSection() {
+    const image =
+      this._config.vehicle_image ||
+      this._config.vehicleImage ||
+      "";
+
+    return `
+      <div class="entity-setting">
+
+        <label>Fahrzeugbild</label>
+
+        ${
+          image
+            ? `
+              <img
+                class="vehicle-image"
+                src="${this._escape(image)}"
+                alt="Fahrzeug"
+              />
+            `
+            : ""
+        }
+
+        <label class="upload-label">
+          Fahrzeugbild auswählen
+          <input
+            type="file"
+            id="vehicle-image"
+            accept="image/*"
+          />
+        </label>
+
+      </div>
+    `;
+  }
+
+  _attachEvents() {
+    this.querySelectorAll("[data-tab]").forEach((button) => {
+      button.addEventListener("click", () => {
+        this._tab = button.dataset.tab;
+        this._message = "";
+        this._render();
+      });
     });
 
-    await this._load();
-  }
+    this.querySelectorAll("[data-module]").forEach((checkbox) => {
+      checkbox.addEventListener("change", () => {
+        if (!this._config.modules) {
+          this._config.modules = {};
+        }
 
-  async _upload(file) {
-    if (!file) {
-      return;
+        this._config.modules[checkbox.dataset.module] =
+          checkbox.checked;
+
+        this._render();
+      });
+    });
+
+    this.querySelectorAll("[data-entity-key]").forEach((select) => {
+      select.addEventListener("change", () => {
+        this._config[select.dataset.entityKey] =
+          select.value;
+      });
+    });
+
+    this.querySelectorAll("[data-text-key]").forEach((input) => {
+      input.addEventListener("input", () => {
+        this._config[input.dataset.textKey] =
+          input.value;
+      });
+    });
+
+    const save = this.querySelector("#save-config");
+
+    if (save) {
+      save.addEventListener("click", () => {
+        this._save();
+      });
     }
 
-    const reader =
-      new FileReader();
+    const imageInput =
+      this.querySelector("#vehicle-image");
 
-    reader.onload = async () => {
+    if (imageInput) {
+      imageInput.addEventListener("change", (event) => {
+        this._uploadVehicleImage(event.target.files?.[0]);
+      });
+    }
+  }
+
+  async _save() {
+    if (!this._hass || !this._entry) return;
+
+    try {
+      this._message = "Speichere …";
+      this._render();
+
       await this._hass.callWS({
-        type:
-          "lakis_solarworld/"
-          + "upload_vehicle_image",
+        type: "lakis_solarworld/save_config",
         entry_id: this._entry,
-        filename: file.name,
-        data: reader.result,
+        config: this._config,
       });
 
-      await this._load();
-    };
+      this._message = "✓ Änderungen gespeichert.";
 
-    reader.readAsDataURL(file);
+      await this._load();
+
+      this._tab = "settings";
+      this._message = "✓ Änderungen gespeichert.";
+      this._render();
+
+    } catch (err) {
+      console.error("LAKIS SOLARWORLD save:", err);
+
+      this._message =
+        "Fehler beim Speichern: " +
+        (err?.message || "Unbekannter Fehler");
+
+      this._render();
+    }
+  }
+
+  async _uploadVehicleImage(file) {
+    if (!file || !this._hass || !this._entry) return;
+
+    try {
+      this._message = "Fahrzeugbild wird hochgeladen …";
+      this._render();
+
+      const reader = new FileReader();
+
+      reader.onload = async () => {
+        try {
+          const result =
+            await this._hass.callWS({
+              type: "lakis_solarworld/upload_vehicle_image",
+              entry_id: this._entry,
+              filename: file.name,
+              content: reader.result,
+            });
+
+          if (result?.url) {
+            this._config.vehicle_image = result.url;
+          }
+
+          this._message =
+            "✓ Fahrzeugbild gespeichert.";
+
+          this._render();
+
+        } catch (err) {
+          console.error(
+            "LAKIS vehicle image:",
+            err
+          );
+
+          this._message =
+            "Fahrzeugbild konnte nicht gespeichert werden.";
+
+          this._render();
+        }
+      };
+
+      reader.readAsDataURL(file);
+
+    } catch (err) {
+      console.error(err);
+
+      this._message =
+        "Fahrzeugbild konnte nicht verarbeitet werden.";
+
+      this._render();
+    }
   }
 }
 
-
-if (
-  !customElements.get(
-    "lakis-solarworld-panel"
-  )
-) {
-  customElements.define(
-    "lakis-solarworld-panel",
-    LakisSolarworldDashboard
-  );
-}
-
-
-if (
-  !customElements.get(
-    "lakis-solarworld-dashboard"
-  )
-) {
+if (!customElements.get("lakis-solarworld-dashboard")) {
   customElements.define(
     "lakis-solarworld-dashboard",
     LakisSolarworldDashboard
   );
 }
-
-
-window.customCards =
-  window.customCards || [];
-
-window.customCards.push({
-  type:
-    "lakis-solarworld-dashboard",
-  name:
-    "LAKIS SOLARWORLD Dashboard",
-  description:
-    "Modulares Energie-Dashboard",
-});
-
-
-window.customStrategies =
-  window.customStrategies || [];
