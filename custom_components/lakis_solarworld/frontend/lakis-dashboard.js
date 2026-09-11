@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.0
+ * Version 1.4.1
  *
  * Design:
  * - black / near-black background
@@ -228,6 +228,7 @@ class LakisSolarworldDashboard extends HTMLElement {
 
   _defaultBackground(tab) {
     const defaults = {
+      overview: "/api/lakis_solarworld/static/defaults/overview.jpg",
       pv: "/api/lakis_solarworld/static/defaults/pv.jpg",
       battery: "/api/lakis_solarworld/static/defaults/battery.jpg",
       wallbox: "/api/lakis_solarworld/static/defaults/wallbox.jpg",
@@ -315,10 +316,10 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
 
         .brand-logo {
-          width: 190px;
-          max-height: 72px;
+          width: 72px;
+          height: 72px;
           object-fit: contain;
-          filter: drop-shadow(0 0 14px rgba(0,180,255,.2));
+          filter: drop-shadow(0 0 16px rgba(112,80,255,.55));
         }
 
         .brand-title {
@@ -416,11 +417,11 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .flow {
           position: relative;
-          min-height: 310px;
+          min-height: 365px;
           display: grid;
-          grid-template-columns: 1fr 1.1fr 1fr;
-          grid-template-rows: 1fr 1fr;
-          gap: 18px;
+          grid-template-columns: 1fr 1.15fr 1fr;
+          grid-template-rows: 1fr 1fr 1fr;
+          gap: 14px 18px;
           align-items: center;
         }
 
@@ -435,16 +436,22 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
         .flow-line {
           fill: none;
-          stroke: #36f28b;
-          stroke-width: 5;
+          stroke-width: 5.5;
           stroke-linecap: round;
-          stroke-dasharray: 12 10;
-          filter: drop-shadow(0 0 7px rgba(54,242,139,.85));
+          stroke-dasharray: 13 11;
           opacity: 0;
+        }
+        .flow-line.green { 
+          stroke: #36f28b;
+          filter: drop-shadow(0 0 7px rgba(54,242,139,.9));
+        }
+        .flow-line.red {
+          stroke: #ff4652;
+          filter: drop-shadow(0 0 8px rgba(255,70,82,.95));
         }
         .flow-line.active {
           opacity: 1;
-          animation: lakis-flow 1.05s linear infinite;
+          animation: lakis-flow 0.95s linear infinite;
         }
         .flow-line.inactive {
           opacity: .08;
@@ -452,9 +459,13 @@ class LakisSolarworldDashboard extends HTMLElement {
           filter: none;
           animation: none;
         }
-        .flow-arrowhead {
+        .flow-arrowhead.green {
           fill: #36f28b;
-          filter: drop-shadow(0 0 5px rgba(54,242,139,.8));
+          filter: drop-shadow(0 0 5px rgba(54,242,139,.9));
+        }
+        .flow-arrowhead.red {
+          fill: #ff4652;
+          filter: drop-shadow(0 0 6px rgba(255,70,82,.95));
         }
         @keyframes lakis-flow {
           to { stroke-dashoffset: -44; }
@@ -501,12 +512,12 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         .house {
           grid-column: 2;
-          grid-row: 1 / span 2;
-          min-height: 150px;
+          grid-row: 2;
+          min-height: 132px;
         }
 
-        .pv-node { grid-column: 1; grid-row: 1; }
-        .grid-node { grid-column: 3; grid-row: 1; }
+        .pv-node { grid-column: 2; grid-row: 1; }
+        .grid-node { grid-column: 2; grid-row: 3; }
         .battery-node { grid-column: 1; grid-row: 2; }
         .wallbox-node { grid-column: 3; grid-row: 2; }
 
@@ -945,7 +956,15 @@ class LakisSolarworldDashboard extends HTMLElement {
             text-align: center;
           }
 
-          .clock {
+          .header-weather {
+            grid-column: 1;
+            justify-self: center;
+          }
+          .header-clock-row {
+            grid-template-columns: 1fr;
+            margin-top: 0;
+          }
+          .header-clock-row .clock {
             grid-column: 1;
             justify-self: center;
             text-align: center;
@@ -954,6 +973,7 @@ class LakisSolarworldDashboard extends HTMLElement {
           .flow {
             grid-template-columns: 1fr 1fr;
             grid-template-rows: auto auto auto;
+            min-height: 420px;
           }
 
           .house {
@@ -1005,21 +1025,40 @@ class LakisSolarworldDashboard extends HTMLElement {
     });
 
     return `
-      <div class="header">
-        <div></div>
+      ${(() => {
+        const weather = this._state(this._entity("weather_entity"));
+        const temperature = weather?.attributes?.temperature;
+        const place = this._hass?.config?.location_name || "";
+        return `
+          <div class="header">
+            <div></div>
 
-        <div class="brand">
-          <img
-            class="brand-logo"
-            src="/api/lakis_solarworld/static/lakis_logo_transparent.png"
-            alt="LAKIS SOLARWORLD"
-          />
-          <div>
-            <div class="brand-title">LAKIS SOLARWORLD</div>
-            <div class="brand-subtitle">Energy Dashboard PRO</div>
+            <div class="brand">
+              <img
+                class="brand-logo"
+                src="/api/lakis_solarworld/static/lakis_mark.png"
+                alt="LAKIS SOLARWORLD"
+              />
+              <div>
+                <div class="brand-title">LAKIS SOLARWORLD</div>
+                <div class="brand-subtitle">Lass die Sonne in dein Herz</div>
+              </div>
+            </div>
+
+            <div class="header-weather">
+              <div class="weather-icon">${this._icon("solar",34)}</div>
+              <div>
+                <div class="weather-temp">${temperature !== undefined && temperature !== null ? this._formatTemp(Number(temperature)) : "—"}</div>
+                <div class="weather-place">${this._escape(place)}</div>
+              </div>
+            </div>
           </div>
-        </div>
+        `;
+      })()}
 
+      <div class="header-clock-row">
+        <div></div>
+        <div></div>
         <div class="clock">
           ${this._escape(date)}<br>
           ${this._escape(time)} Uhr
@@ -1073,8 +1112,8 @@ class LakisSolarworldDashboard extends HTMLElement {
     return this._renderOverview();
   }
 
-  _flowClass(active) {
-    return active ? "flow-line active" : "flow-line inactive";
+  _flowClass(active, color = "green") {
+    return active ? `flow-line ${color} active` : "flow-line inactive";
   }
 
   _renderFlowArrows(pv, grid, battery, wallbox) {
@@ -1087,18 +1126,25 @@ class LakisSolarworldDashboard extends HTMLElement {
     const houseToWallbox = wallbox !== null && wallbox > threshold && this._enabled("wallbox");
 
     return `
-      <svg class="flow-arrows" viewBox="0 0 1000 310" preserveAspectRatio="none" aria-hidden="true">
+      <svg class="flow-arrows" viewBox="0 0 1000 365" preserveAspectRatio="none" aria-hidden="true">
         <defs>
-          <marker id="lakis-arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L12,6 L0,12 z" class="flow-arrowhead"></path>
+          <marker id="lakis-arrow-green" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L14,7 L0,14 z" class="flow-arrowhead green"></path>
+          </marker>
+          <marker id="lakis-arrow-red" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L14,7 L0,14 z" class="flow-arrowhead red"></path>
           </marker>
         </defs>
-        <path class="${this._flowClass(pvToHouse)}" marker-end="url(#lakis-arrow-green)" d="M245 76 C340 76 385 125 448 145"></path>
-        <path class="${this._flowClass(gridToHouse)}" marker-end="url(#lakis-arrow-green)" d="M755 76 C660 76 615 125 552 145"></path>
-        <path class="${this._flowClass(houseToGrid)}" marker-end="url(#lakis-arrow-green)" d="M552 145 C615 125 660 76 755 76"></path>
-        <path class="${this._flowClass(batteryToHouse)}" marker-end="url(#lakis-arrow-green)" d="M245 234 C340 234 385 185 448 165"></path>
-        <path class="${this._flowClass(houseToBattery)}" marker-end="url(#lakis-arrow-green)" d="M448 165 C385 185 340 234 245 234"></path>
-        <path class="${this._flowClass(houseToWallbox)}" marker-end="url(#lakis-arrow-green)" d="M552 165 C615 185 660 234 755 234"></path>
+        <!-- PV → Haus -->
+        <path class="${this._flowClass(pvToHouse, "green")}" marker-end="url(#lakis-arrow-green)" d="M500 103 C500 122 500 137 500 153"></path>
+        <!-- Haus ↔ Batterie -->
+        <path class="${this._flowClass(batteryToHouse, "green")}" marker-end="url(#lakis-arrow-green)" d="M330 182 C385 182 414 182 454 182"></path>
+        <path class="${this._flowClass(houseToBattery, "green")}" marker-end="url(#lakis-arrow-green)" d="M454 198 C414 198 385 198 330 198"></path>
+        <!-- Haus ↔ Wallbox -->
+        <path class="${this._flowClass(houseToWallbox, "green")}" marker-end="url(#lakis-arrow-green)" d="M546 182 C590 182 620 182 670 182"></path>
+        <!-- Netzbezug / Einspeisung -->
+        <path class="${this._flowClass(gridToHouse, "red")}" marker-end="url(#lakis-arrow-red)" d="M500 307 C500 285 500 264 500 240"></path>
+        <path class="${this._flowClass(houseToGrid, "green")}" marker-end="url(#lakis-arrow-green)" d="M500 240 C500 264 500 285 500 307"></path>
       </svg>
     `;
   }
@@ -1720,7 +1766,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.4.0
+        · Version 1.4.1
       </div>
     `;
   }
