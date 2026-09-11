@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.1
+ * Version 1.4.2
  *
  * Design:
  * - black / near-black background
@@ -23,6 +23,8 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._saveTimer = null;
     this._saveInFlight = false;
     this._dirty = false;
+    this._haSidebarHidden = false;
+    this._haSidebarTargets = [];
   }
 
   set hass(value) {
@@ -276,8 +278,8 @@ class LakisSolarworldDashboard extends HTMLElement {
           overflow: hidden;
           background:
             linear-gradient(
-              rgba(0,0,0,.82),
-              rgba(0,0,0,.92)
+              rgba(0,0,0,.38),
+              rgba(0,0,0,.58)
             ),
             ${bg ? `url("${this._escape(bg)}")` : "none"};
           background-size: cover;
@@ -296,6 +298,28 @@ class LakisSolarworldDashboard extends HTMLElement {
               rgba(0,120,190,.12),
               transparent 48%
             );
+        }
+
+        .ha-sidebar-toggle {
+          position: fixed;
+          top: 14px;
+          left: 14px;
+          z-index: 10000;
+          width: 38px;
+          height: 38px;
+          border-radius: 12px;
+          border: 1px solid rgba(188,92,255,.72);
+          background: rgba(74,22,105,.78);
+          color: #fff;
+          box-shadow: 0 0 18px rgba(174,74,255,.28), inset 0 0 12px rgba(255,255,255,.05);
+          cursor: pointer;
+          font-size: 19px;
+          line-height: 1;
+          backdrop-filter: blur(10px);
+        }
+        .ha-sidebar-toggle:hover {
+          background: rgba(111,38,154,.88);
+          border-color: #d48cff;
         }
 
         .header {
@@ -389,8 +413,8 @@ class LakisSolarworldDashboard extends HTMLElement {
           background:
             linear-gradient(
               145deg,
-              rgba(4,12,19,.92),
-              rgba(0,0,0,.88)
+              rgba(4,12,19,.18),
+              rgba(0,0,0,.12)
             );
           border: 1px solid rgba(0,170,255,.32);
           border-radius: 20px;
@@ -436,18 +460,18 @@ class LakisSolarworldDashboard extends HTMLElement {
         }
         .flow-line {
           fill: none;
-          stroke-width: 5.5;
+          stroke-width: 2.6;
           stroke-linecap: round;
-          stroke-dasharray: 13 11;
+          stroke-dasharray: 7 8;
           opacity: 0;
         }
         .flow-line.green { 
           stroke: #36f28b;
-          filter: drop-shadow(0 0 7px rgba(54,242,139,.9));
+          filter: drop-shadow(0 0 4px rgba(54,242,139,.8));
         }
         .flow-line.red {
           stroke: #ff4652;
-          filter: drop-shadow(0 0 8px rgba(255,70,82,.95));
+          filter: drop-shadow(0 0 5px rgba(255,70,82,.85));
         }
         .flow-line.active {
           opacity: 1;
@@ -492,7 +516,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         .energy-icon { width:42px; height:42px; display:flex; align-items:center; justify-content:center; margin-bottom:7px; color:#fff; }
         .energy-icon svg { width:100%; height:100%; }
         .visual-node { overflow:hidden; position:relative; }
-        .visual-node::before { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.68),rgba(0,0,0,.34)),var(--tile-bg) center/cover no-repeat; opacity:.9; z-index:0; }
+        .visual-node::before { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.46),rgba(0,0,0,.18)),var(--tile-bg) center/cover no-repeat; opacity:.9; z-index:0; }
         .visual-node > * { position:relative; z-index:1; }
         .energy-name { color: #ffffff; font-size: 12px; margin-bottom: 4px; }
         .energy-value { font-size: 20px; font-weight: 800; color: #ffffff !important; -webkit-text-fill-color: #ffffff !important; text-shadow: 0 0 10px rgba(255,255,255,.18); }
@@ -550,7 +574,7 @@ class LakisSolarworldDashboard extends HTMLElement {
           content: "";
           position: absolute;
           inset: 0;
-          background: linear-gradient(90deg,rgba(0,0,0,.62),rgba(0,0,0,.30));
+          background: linear-gradient(90deg,rgba(0,0,0,.28),rgba(0,0,0,.10));
         }
         .side-card > *, .visual-tile > * { position: relative; z-index: 2; }
         .overview-shell {
@@ -568,7 +592,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         .status-card {
           padding: 18px;
           border-radius: 20px;
-          background: linear-gradient(145deg,rgba(4,12,19,.94),rgba(0,0,0,.88));
+          background: linear-gradient(145deg,rgba(4,12,19,.18),rgba(0,0,0,.12));
           border: 1px solid rgba(0,170,255,.30);
           box-shadow: 0 18px 55px rgba(0,0,0,.38);
           backdrop-filter: blur(10px);
@@ -582,7 +606,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         .visual-tiles {
           display:grid;
           grid-template-columns:repeat(5,minmax(0,1fr));
-          gap:12px;
+          gap:20px;
           margin-top:14px;
         }
         .visual-tile {
@@ -592,7 +616,7 @@ class LakisSolarworldDashboard extends HTMLElement {
           overflow:hidden;
           border-radius:18px;
           border:1px solid rgba(0,170,255,.30);
-          background:linear-gradient(145deg,rgba(4,12,19,.95),rgba(0,0,0,.90));
+          background:linear-gradient(145deg,rgba(4,12,19,.16),rgba(0,0,0,.10));
           box-shadow:0 15px 45px rgba(0,0,0,.36);
           padding:16px;
           display:flex;
@@ -631,8 +655,8 @@ class LakisSolarworldDashboard extends HTMLElement {
           position: relative;
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: 12px;
-          margin-top: 14px;
+          gap: 18px;
+          margin-top: 16px;
         }
 
         .summary .card {
@@ -1000,6 +1024,7 @@ class LakisSolarworldDashboard extends HTMLElement {
       </style>
 
       <div class="app">
+        <button class="ha-sidebar-toggle" data-ha-sidebar-toggle type="button" title="Home-Assistant-Seitenleiste ein-/ausblenden" aria-label="Home-Assistant-Seitenleiste ein-/ausblenden">☰</button>
         ${this._renderHeader()}
         ${this._renderTabs()}
         ${this._renderContent()}
@@ -1128,11 +1153,11 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <svg class="flow-arrows" viewBox="0 0 1000 365" preserveAspectRatio="none" aria-hidden="true">
         <defs>
-          <marker id="lakis-arrow-green" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L14,7 L0,14 z" class="flow-arrowhead green"></path>
+          <marker id="lakis-arrow-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L8,4 L0,8 z" class="flow-arrowhead green"></path>
           </marker>
-          <marker id="lakis-arrow-red" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L14,7 L0,14 z" class="flow-arrowhead red"></path>
+          <marker id="lakis-arrow-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L8,4 L0,8 z" class="flow-arrowhead red"></path>
           </marker>
         </defs>
         <!-- PV → Haus -->
@@ -1591,7 +1616,57 @@ class LakisSolarworldDashboard extends HTMLElement {
     `;
   }
 
+  _findInShadowRoots(tagName) {
+    const wanted = tagName.toLowerCase();
+    const found = [];
+    const visit = (root) => {
+      if (!root) return;
+      const elements = root.querySelectorAll ? root.querySelectorAll('*') : [];
+      for (const el of elements) {
+        if (el.tagName?.toLowerCase() === wanted) found.push(el);
+        if (el.shadowRoot) visit(el.shadowRoot);
+      }
+    };
+    visit(document);
+    return found;
+  }
+
+  _setHASidebarHidden(hidden) {
+    this._haSidebarHidden = hidden;
+
+    if (!this._haSidebarTargets.length) {
+      const sidebars = this._findInShadowRoots('ha-sidebar');
+      const drawers = this._findInShadowRoots('ha-drawer');
+      const targets = [...sidebars];
+      for (const drawer of drawers) {
+        const hasSidebar = drawer.querySelector?.('ha-sidebar') || (drawer.shadowRoot && this._findInShadowRoots('ha-sidebar').some((sidebar) => sidebar.getRootNode() === drawer.shadowRoot));
+        if (hasSidebar) targets.push(drawer);
+      }
+      this._haSidebarTargets = [...new Set(targets)].map((el) => ({
+        el,
+        display: el.style.display,
+        visibility: el.style.visibility,
+      }));
+    }
+
+    for (const target of this._haSidebarTargets) {
+      if (hidden) {
+        target.el.style.display = 'none';
+      } else {
+        target.el.style.display = target.display;
+        target.el.style.visibility = target.visibility;
+      }
+    }
+  }
+
   _attachEvents() {
+    const sidebarToggle = this.querySelector("[data-ha-sidebar-toggle]");
+    if (sidebarToggle) {
+      sidebarToggle.addEventListener("click", () => {
+        this._setHASidebarHidden(!this._haSidebarHidden);
+      });
+    }
+
     this.querySelectorAll("[data-tab]").forEach((button) => {
       button.addEventListener("click", async () => {
         if (this._tab === "settings" && this._dirty) {
@@ -1766,7 +1841,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.4.1
+        · Version 1.4.2
       </div>
     `;
   }
