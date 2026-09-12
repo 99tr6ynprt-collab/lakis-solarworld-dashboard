@@ -98,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1020"
+                "lakis-dashboard.js?v=1021"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -238,10 +238,31 @@ def _register_websocket(hass: HomeAssistant) -> None:
         entry = _get_entry(hass, msg["entry_id"])
         new_data, requested_options = _split_config(dict(msg["config"]))
 
-        # Module switches are deliberately NOT part of the generic save path.
-        # They have their own atomic command below. This prevents an older
-        # entity/background save from ever turning a module back on.
-        requested_options.pop("modules", None)
+        # Backward compatibility: older/cached frontends can still send the
+        # modules block through save_config. Persist it instead of discarding it.
+        incoming_modules = requested_options.pop("modules", None)
+        if isinstance(incoming_modules, dict):
+            domain_data = hass.data.setdefault(DOMAIN, {})
+            module_store = domain_data.get("module_store")
+            if module_store is None:
+                module_store = Store(
+                    hass, MODULE_STORE_VERSION, "lakis_solarworld_modules"
+                )
+                domain_data["module_store"] = module_store
+
+            store_data = domain_data.setdefault(MODULE_STORE_KEY, {})
+            stored_modules = dict(store_data.get(entry.entry_id, {}))
+            if not stored_modules:
+                stored_modules.update(
+                    _modules_from_config(_get_combined_config(entry))
+                )
+
+            for key, value in incoming_modules.items():
+                stored_modules[str(key)] = bool(value)
+
+            store_data[entry.entry_id] = stored_modules
+            await module_store.async_save(store_data)
+            requested_options["modules"] = dict(stored_modules)
 
         merged_data = dict(entry.data)
         merged_data.update(new_data)
