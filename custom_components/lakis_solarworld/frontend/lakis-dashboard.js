@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.6
+ * Version 1.4.7
  *
  * Design:
  * - black / near-black background
@@ -22,6 +22,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._rendered = false;
     this._saveTimer = null;
     this._saveInFlight = false;
+    this._savePromise = null;
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
@@ -1832,15 +1833,15 @@ class LakisSolarworldDashboard extends HTMLElement {
     });
 
     this.querySelectorAll("[data-module]").forEach((checkbox) => {
-      checkbox.addEventListener("change", () => {
+      checkbox.addEventListener("change", async () => {
         this._config.modules ||= {};
         this._config.modules[checkbox.dataset.module] = checkbox.checked;
         this._dirty = true;
-        this._scheduleSave();
 
-        // Module can change which settings are visible, so a deliberate
-        // rerender here is safe; entity <select> controls are not involved.
+        // Module switches are saved immediately. This prevents a race between
+        // the debounce timer and leaving the settings page on iPad.
         this._render();
+        await this._save(true);
       });
     });
 
@@ -1894,36 +1895,67 @@ class LakisSolarworldDashboard extends HTMLElement {
   async _save(silent = false) {
     if (!this._hass || !this._entry) return;
 
-    try {
-      if (this._saveInFlight) return;
-      this._saveInFlight = true;
-      if (!silent) {
-        this._message = "Speichere …";
-        this._render();
-      }
+    // Cancel a pending debounce when an explicit save is requested.
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
+    }
 
-      const result = await this._hass.callWS({
-        type: "lakis_solarworld/save_config",
-        entry_id: this._entry,
-        config: this._config,
-      });
+    // If another save is already running, wait for it instead of silently
+    // dropping the newer configuration. This is important when leaving the
+    // settings page immediately after changing a module on iPad.
+    if (this._savePromise) {
+      await this._savePromise;
+      if (!this._dirty) return;
+    }
 
-      this._config = result?.config || this._config;
-      this._dirty = false;
-      if (!silent) {
-        this._message = "✓ Änderungen gespeichert.";
-        // Stay on settings. Do not trigger an unnecessary reload.
+    const payload = JSON.parse(JSON.stringify(this._config));
+
+    this._savePromise = (async () => {
+      try {
+        if (!silent) {
+          this._message = "Speichere …";
+          this._render();
+        }
+
+        const result = await this._hass.callWS({
+          type: "lakis_solarworld/save_config",
+          entry_id: this._entry,
+          config: payload,
+        });
+
+        // Only replace the live config with the response when no newer local
+        // changes were made while the request was in flight.
+        const returned = result?.config || null;
+        if (returned && !this._dirty) this._config = returned;
+
+        // The request contains the complete current configuration snapshot.
+        // If the user changed something while it was in flight, keep dirty=true
+        // so the next save writes the newer state as well.
+        const stillSame = JSON.stringify(this._config) === JSON.stringify(payload);
+        if (stillSame) this._dirty = false;
+
+        if (!silent) {
+          this._message = "✓ Änderungen gespeichert.";
+          this._render();
+        }
+      } catch (err) {
+        console.error("LAKIS SOLARWORLD save:", err);
+        this._message =
+          "Fehler beim Speichern: " +
+          (err?.message || "Unbekannter Fehler");
         this._render();
+      } finally {
+        this._savePromise = null;
       }
-    } catch (err) {
-      console.error("LAKIS SOLARWORLD save:", err);
-      this._message =
-        "Fehler beim Speichern: " +
-        (err?.message || "Unbekannter Fehler");
-      this._render();
-    } finally {
-      this._saveInFlight = false;
-      if (this._dirty && !this._saveTimer) this._scheduleSave();
+    })();
+
+    await this._savePromise;
+
+    // A change may have happened while the request was running. Persist it
+    // immediately instead of waiting for another UI action.
+    if (this._dirty && !this._savePromise) {
+      await this._save(true);
     }
   }
 
