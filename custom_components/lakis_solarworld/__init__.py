@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1023"
+                "lakis-dashboard.js?v=1024"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -208,12 +208,18 @@ def _register_websocket(hass: HomeAssistant) -> None:
     @websocket_api.async_response
     async def save_config(hass, connection, msg):
         entry = _get_entry(hass, msg["entry_id"])
-        new_data, requested_options = _split_config(dict(msg["config"]))
+        new_data, new_options = _split_config(dict(msg["config"]))
 
         merged_data = dict(entry.data)
         merged_data.update(new_data)
+
+        # Preserve the existing ConfigEntry options and merge the incoming
+        # configuration into them. This is the same persistent storage path
+        # used by the working entity settings. In particular, a module value
+        # that is already stored must never disappear because a later save was
+        # created from a stale frontend snapshot.
         merged_options = dict(entry.options)
-        merged_options.update(requested_options)
+        merged_options.update(new_options)
 
         hass.config_entries.async_update_entry(
             entry,
@@ -221,11 +227,12 @@ def _register_websocket(hass: HomeAssistant) -> None:
             options=merged_options,
         )
 
-        # async_update_entry updates the ConfigEntry object immediately. Read
-        # it back after the update so the response is the authoritative state.
-        updated_config = dict(entry.data)
-        updated_config.update(entry.options)
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = dict(updated_config)
+        # Build the response from the exact merged snapshots instead of
+        # immediately reading the ConfigEntry again. This avoids returning a
+        # stale options object while Home Assistant schedules the persistence.
+        updated_config = dict(merged_data)
+        updated_config.update(merged_options)
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = updated_config
 
         connection.send_result(
             msg["id"],
