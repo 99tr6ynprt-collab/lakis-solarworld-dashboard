@@ -12,9 +12,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.storage import Store
 
 DOMAIN = "lakis_solarworld"
 PLATFORMS: list[str] = []
+MODULE_STORE_VERSION = 1
+MODULE_STORE_KEY = "module_states"
 
 LICENSE_DATA_KEYS = {
     "license_key",
@@ -43,8 +46,32 @@ def _get_combined_config(entry: ConfigEntry) -> dict[str, Any]:
     return config
 
 
+def _modules_from_config(config: dict[str, Any]) -> dict[str, bool]:
+    raw = config.get("modules") or {}
+    return {str(key): bool(value) for key, value in dict(raw).items()}
+
+
+def _config_with_persisted_modules(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> dict[str, Any]:
+    config = _get_combined_config(entry)
+    store_data = hass.data.get(DOMAIN, {}).get(MODULE_STORE_KEY, {})
+    stored = store_data.get(entry.entry_id) if isinstance(store_data, dict) else None
+    if isinstance(stored, dict):
+        modules = _modules_from_config(config)
+        modules.update({str(k): bool(v) for k, v in stored.items()})
+        config["modules"] = modules
+    return config
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.data.setdefault(DOMAIN, {})
+    store = Store(hass, MODULE_STORE_VERSION, "lakis_solarworld_modules")
+    stored = await store.async_load()
+    if not isinstance(stored, dict):
+        stored = {}
+    hass.data[DOMAIN]["module_store"] = store
+    hass.data[DOMAIN][MODULE_STORE_KEY] = stored
 
     static_dir = Path(__file__).parent / "frontend"
     await hass.http.async_register_static_paths(
@@ -71,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1018"
+                "lakis-dashboard.js?v=1020"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -196,7 +223,8 @@ def _register_websocket(hass: HomeAssistant) -> None:
     @callback
     def get_config(hass, connection, msg):
         entry = _get_entry(hass, msg["entry_id"])
-        connection.send_result(msg["id"], _get_combined_config(entry))
+        config = _config_with_persisted_modules(hass, entry)
+        connection.send_result(msg["id"], config)
 
     @websocket_api.websocket_command(
         {
@@ -228,8 +256,7 @@ def _register_websocket(hass: HomeAssistant) -> None:
 
         # async_update_entry updates the ConfigEntry object immediately. Read
         # it back after the update so the response is the authoritative state.
-        updated_config = dict(entry.data)
-        updated_config.update(entry.options)
+        updated_config = _config_with_persisted_modules(hass, entry)
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = dict(updated_config)
 
         connection.send_result(
@@ -255,16 +282,34 @@ def _register_websocket(hass: HomeAssistant) -> None:
         }:
             raise HomeAssistantError("Invalid LAKIS SOLARWORLD module")
 
-        options = dict(entry.options)
-        modules = dict(options.get("modules", {}))
-        modules[module] = bool(msg["enabled"])
-        options["modules"] = modules
+        # Module state has its own persistent HA Store. This is deliberately
+        # independent from the generic ConfigEntry save path so an older
+        # configuration snapshot can never resurrect a disabled module.
+        domain_data = hass.data.setdefault(DOMAIN, {})
+        module_store = domain_data.get("module_store")
+        if module_store is None:
+            module_store = Store(hass, MODULE_STORE_VERSION, "lakis_solarworld_modules")
+            domain_data["module_store"] = module_store
 
-        # This is the ONLY write path for module switches.
+        store_data = domain_data.setdefault(MODULE_STORE_KEY, {})
+        stored_modules = dict(store_data.get(entry.entry_id, {}))
+
+        # Seed the independent store from the current ConfigEntry once, then
+        # change only the requested module.
+        if not stored_modules:
+            stored_modules.update(_modules_from_config(_get_combined_config(entry)))
+        stored_modules[module] = bool(msg["enabled"])
+
+        store_data[entry.entry_id] = stored_modules
+        await module_store.async_save(store_data)
+
+        # Keep ConfigEntry.options in sync as a secondary copy. The Store above
+        # remains authoritative for module visibility.
+        options = dict(entry.options)
+        options["modules"] = dict(stored_modules)
         hass.config_entries.async_update_entry(entry, options=options)
 
-        updated_config = dict(entry.data)
-        updated_config.update(entry.options)
+        updated_config = _config_with_persisted_modules(hass, entry)
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = dict(updated_config)
 
         connection.send_result(
