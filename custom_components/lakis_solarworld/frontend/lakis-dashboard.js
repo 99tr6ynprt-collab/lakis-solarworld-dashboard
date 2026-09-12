@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.8
+ * Version 1.4.9
  *
  * Design:
  * - black / near-black background
@@ -23,6 +23,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._saveTimer = null;
     this._saveInFlight = false;
     this._savePromise = null;
+    this._moduleSavePromise = null;
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
@@ -1815,6 +1816,9 @@ class LakisSolarworldDashboard extends HTMLElement {
         if (this._tab === "settings" && this._dirty) {
           await this._save(true);
         }
+        if (this._moduleSavePromise) {
+          await this._moduleSavePromise;
+        }
         this._tab = button.dataset.tab;
         this._message = "";
         this._render();
@@ -1826,6 +1830,9 @@ class LakisSolarworldDashboard extends HTMLElement {
         if (this._tab === "settings" && this._dirty) {
           await this._save(true);
         }
+        if (this._moduleSavePromise) {
+          await this._moduleSavePromise;
+        }
         this._tab = tile.dataset.tileTab;
         this._message = "";
         this._render();
@@ -1834,14 +1841,49 @@ class LakisSolarworldDashboard extends HTMLElement {
 
     this.querySelectorAll("[data-module]").forEach((checkbox) => {
       checkbox.addEventListener("change", async () => {
+        const module = checkbox.dataset.module;
+        const enabled = checkbox.checked;
         this._config.modules ||= {};
-        this._config.modules[checkbox.dataset.module] = checkbox.checked;
-        this._dirty = true;
+        const previous = this._config.modules[module] !== false;
+        this._config.modules[module] = enabled;
 
-        // Persist before rebuilding the settings DOM so the control cannot be
-        // recreated from an older server snapshot on iPad.
-        await this._save(true);
-        this._render();
+        try {
+          // Finish an already running write first. The generic save never
+          // writes the modules block, so it cannot overwrite this dedicated
+          // module update afterwards.
+          if (this._savePromise) {
+            await this._savePromise;
+          }
+          if (this._moduleSavePromise) {
+            await this._moduleSavePromise;
+          }
+
+          this._moduleSavePromise = this._hass.callWS({
+            type: "lakis_solarworld/set_module",
+            entry_id: this._entry,
+            module,
+            enabled,
+          });
+
+          const result = await this._moduleSavePromise;
+          this._moduleSavePromise = null;
+
+          const returned = result?.config || null;
+          if (returned && !this._dirty) {
+            this._config = returned;
+          }
+          // If another setting was changed while the module request was in
+          // flight, keep _dirty=true so that change is still saved.
+          this._message = "✓ Modul gespeichert.";
+          this._render();
+        } catch (err) {
+          this._moduleSavePromise = null;
+          this._config.modules[module] = previous;
+          this._message =
+            "Fehler beim Speichern des Moduls: " +
+            (err?.message || "Unbekannter Fehler");
+          this._render();
+        }
       });
     });
 
@@ -1909,7 +1951,16 @@ class LakisSolarworldDashboard extends HTMLElement {
       if (!this._dirty) return;
     }
 
+    // Module switches have their own atomic persistence command. Wait for an
+    // in-flight module write, then never send the modules block through the
+    // generic save path.
+    if (this._moduleSavePromise) {
+      await this._moduleSavePromise;
+      if (!this._dirty) return;
+    }
+
     const payload = JSON.parse(JSON.stringify(this._config));
+    delete payload.modules;
 
     this._savePromise = (async () => {
       try {
@@ -2014,7 +2065,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.4.8
+        · Version 1.4.9
       </div>
     `;
   }

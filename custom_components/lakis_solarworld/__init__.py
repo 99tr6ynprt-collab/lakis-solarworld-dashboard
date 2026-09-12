@@ -208,27 +208,73 @@ def _register_websocket(hass: HomeAssistant) -> None:
     @websocket_api.async_response
     async def save_config(hass, connection, msg):
         entry = _get_entry(hass, msg["entry_id"])
-        new_data, new_options = _split_config(dict(msg["config"]))
+        new_data, requested_options = _split_config(dict(msg["config"]))
+
+        # Module switches are deliberately NOT part of the generic save path.
+        # They have their own atomic command below. This prevents an older
+        # entity/background save from ever turning a module back on.
+        requested_options.pop("modules", None)
 
         merged_data = dict(entry.data)
         merged_data.update(new_data)
+        merged_options = dict(entry.options)
+        merged_options.update(requested_options)
 
         hass.config_entries.async_update_entry(
             entry,
             data=merged_data,
-            options=new_options,
+            options=merged_options,
         )
 
-        # Build the response from the values just written rather than from a
-        # potentially stale ConfigEntry object. This keeps the frontend and
-        # persisted options in sync immediately after Save.
-        updated_config = dict(merged_data)
-        updated_config.update(new_options)
+        # async_update_entry updates the ConfigEntry object immediately. Read
+        # it back after the update so the response is the authoritative state.
+        updated_config = dict(entry.data)
+        updated_config.update(entry.options)
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = dict(updated_config)
 
         connection.send_result(
             msg["id"],
             {"ok": True, "config": updated_config},
+        )
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "lakis_solarworld/set_module",
+            vol.Required("entry_id"): cv.string,
+            vol.Required("module"): cv.string,
+            vol.Required("enabled"): bool,
+        }
+    )
+    @websocket_api.async_response
+    async def set_module(hass, connection, msg):
+        entry = _get_entry(hass, msg["entry_id"])
+        module = msg["module"]
+        if module not in {
+            "energy", "pv", "grid", "battery",
+            "wallbox", "vehicle", "heatpump", "climate",
+        }:
+            raise HomeAssistantError("Invalid LAKIS SOLARWORLD module")
+
+        options = dict(entry.options)
+        modules = dict(options.get("modules", {}))
+        modules[module] = bool(msg["enabled"])
+        options["modules"] = modules
+
+        # This is the ONLY write path for module switches.
+        hass.config_entries.async_update_entry(entry, options=options)
+
+        updated_config = dict(entry.data)
+        updated_config.update(entry.options)
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = dict(updated_config)
+
+        connection.send_result(
+            msg["id"],
+            {
+                "ok": True,
+                "module": module,
+                "enabled": bool(msg["enabled"]),
+                "config": updated_config,
+            },
         )
 
     @websocket_api.websocket_command(
@@ -351,6 +397,7 @@ def _register_websocket(hass: HomeAssistant) -> None:
 
     websocket_api.async_register_command(hass, get_config)
     websocket_api.async_register_command(hass, save_config)
+    websocket_api.async_register_command(hass, set_module)
     websocket_api.async_register_command(hass, suggest_entities_ws)
     websocket_api.async_register_command(hass, upload_vehicle_image)
     websocket_api.async_register_command(hass, upload_background_image)
