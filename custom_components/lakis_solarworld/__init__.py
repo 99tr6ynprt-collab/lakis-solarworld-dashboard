@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1017"
+                "lakis-dashboard.js?v=1018"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -219,8 +219,12 @@ def _register_websocket(hass: HomeAssistant) -> None:
             options=new_options,
         )
 
-        updated_config = _get_combined_config(entry)
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = updated_config
+        # Build the response from the values just written rather than from a
+        # potentially stale ConfigEntry object. This keeps the frontend and
+        # persisted options in sync immediately after Save.
+        updated_config = dict(merged_data)
+        updated_config.update(new_options)
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = dict(updated_config)
 
         connection.send_result(
             msg["id"],

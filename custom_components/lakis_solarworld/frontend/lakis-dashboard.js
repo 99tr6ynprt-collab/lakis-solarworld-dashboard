@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.7
+ * Version 1.4.8
  *
  * Design:
  * - black / near-black background
@@ -1838,10 +1838,10 @@ class LakisSolarworldDashboard extends HTMLElement {
         this._config.modules[checkbox.dataset.module] = checkbox.checked;
         this._dirty = true;
 
-        // Module switches are saved immediately. This prevents a race between
-        // the debounce timer and leaving the settings page on iPad.
-        this._render();
+        // Persist before rebuilding the settings DOM so the control cannot be
+        // recreated from an older server snapshot on iPad.
         await this._save(true);
+        this._render();
       });
     });
 
@@ -1924,16 +1924,15 @@ class LakisSolarworldDashboard extends HTMLElement {
           config: payload,
         });
 
-        // Only replace the live config with the response when no newer local
-        // changes were made while the request was in flight.
+        // Adopt the server response when no newer local change happened while
+        // the request was in flight. The backend response is built from the
+        // values that were actually written.
         const returned = result?.config || null;
-        if (returned && !this._dirty) this._config = returned;
-
-        // The request contains the complete current configuration snapshot.
-        // If the user changed something while it was in flight, keep dirty=true
-        // so the next save writes the newer state as well.
         const stillSame = JSON.stringify(this._config) === JSON.stringify(payload);
-        if (stillSame) this._dirty = false;
+        if (returned && stillSame) {
+          this._config = returned;
+          this._dirty = false;
+        }
 
         if (!silent) {
           this._message = "✓ Änderungen gespeichert.";
@@ -2015,7 +2014,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.4.2
+        · Version 1.4.8
       </div>
     `;
   }
