@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.5.4
+ * Version 1.5.5
  *
  * Design:
  * - black / near-black background
@@ -1812,8 +1812,9 @@ class LakisSolarworldDashboard extends HTMLElement {
 
     this.querySelectorAll("[data-tab]").forEach((button) => {
       button.addEventListener("click", async () => {
-        if (this._tab === "settings" && this._dirty) {
-          await this._save(true);
+        if (this._tab === "settings") {
+          if (this._dirty) await this._save(true);
+          if (this._moduleSavePromise) await this._moduleSavePromise;
         }
         this._tab = button.dataset.tab;
         this._message = "";
@@ -1823,8 +1824,9 @@ class LakisSolarworldDashboard extends HTMLElement {
 
     this.querySelectorAll("[data-tile-tab]").forEach((tile) => {
       tile.addEventListener("click", async () => {
-        if (this._tab === "settings" && this._dirty) {
-          await this._save(true);
+        if (this._tab === "settings") {
+          if (this._dirty) await this._save(true);
+          if (this._moduleSavePromise) await this._moduleSavePromise;
         }
         this._tab = tile.dataset.tileTab;
         this._message = "";
@@ -1834,16 +1836,9 @@ class LakisSolarworldDashboard extends HTMLElement {
 
     this.querySelectorAll("[data-module]").forEach((checkbox) => {
       checkbox.addEventListener("change", async () => {
-        this._config.modules ||= {};
-        this._config.modules[checkbox.dataset.module] = checkbox.checked;
-        this._dirty = true;
-
-        // Use exactly the same save path as entity settings. Do not rebuild
-        // the settings DOM while the iPad is finishing the touch/click.
-        // The current switch state therefore stays visible until the tab is
-        // actually left, and the same persistent ConfigEntry options path is
-        // used for modules and entities.
-        await this._save(true);
+        const module = checkbox.dataset.module;
+        const enabled = checkbox.checked;
+        await this._setModule(module, enabled, checkbox);
       });
     });
 
@@ -1884,6 +1879,45 @@ class LakisSolarworldDashboard extends HTMLElement {
         this._resetBackground(button.dataset.resetBackground);
       });
     });
+  }
+
+  async _setModule(module, enabled, checkbox) {
+    if (!this._hass || !this._entry || !module) return;
+
+    const previous = this._enabled(module);
+    this._config.modules ||= {};
+    this._config.modules[module] = enabled;
+
+    const request = async () => {
+      try {
+        const result = await this._hass.callWS({
+          type: "lakis_solarworld/set_module",
+          entry_id: this._entry,
+          module,
+          enabled,
+        });
+
+        if (result?.config) {
+          this._config = result.config;
+        } else {
+          this._config.modules ||= {};
+          this._config.modules[module] = enabled;
+        }
+      } catch (err) {
+        this._config.modules ||= {};
+        this._config.modules[module] = previous;
+        if (checkbox) checkbox.checked = previous;
+        console.error("LAKIS SOLARWORLD module save:", err);
+        this._message =
+          "Modul konnte nicht gespeichert werden: " +
+          (err?.message || "Unbekannter Fehler");
+        this._render();
+      }
+    };
+
+    this._moduleSavePromise =
+      (this._moduleSavePromise || Promise.resolve()).then(request);
+    await this._moduleSavePromise;
   }
 
   _scheduleSave() {
@@ -2017,7 +2051,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.5.4
+        · Version 1.5.5
       </div>
     `;
   }

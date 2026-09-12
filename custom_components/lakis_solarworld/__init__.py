@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1024"
+                "lakis-dashboard.js?v=1025"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -237,6 +237,45 @@ def _register_websocket(hass: HomeAssistant) -> None:
         connection.send_result(
             msg["id"],
             {"ok": True, "config": updated_config},
+        )
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "lakis_solarworld/set_module",
+            vol.Required("entry_id"): cv.string,
+            vol.Required("module"): cv.string,
+            vol.Required("enabled"): cv.boolean,
+        }
+    )
+    @websocket_api.async_response
+    async def set_module(hass, connection, msg):
+        entry = _get_entry(hass, msg["entry_id"])
+        module = msg["module"]
+        enabled = bool(msg["enabled"])
+
+        modules = dict(entry.options.get("modules") or {})
+        modules[module] = enabled
+
+        new_options = dict(entry.options)
+        new_options["modules"] = modules
+
+        hass.config_entries.async_update_entry(
+            entry,
+            options=new_options,
+        )
+
+        updated_config = dict(entry.data)
+        updated_config.update(new_options)
+        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = updated_config
+
+        connection.send_result(
+            msg["id"],
+            {
+                "ok": True,
+                "config": updated_config,
+                "module": module,
+                "enabled": enabled,
+            },
         )
 
     @websocket_api.websocket_command(
