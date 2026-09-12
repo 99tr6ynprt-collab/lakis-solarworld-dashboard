@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.4.4
+ * Version 1.4.6
  *
  * Design:
  * - black / near-black background
@@ -113,6 +113,41 @@ class LakisSolarworldDashboard extends HTMLElement {
     if (!state) return null;
     const value = Number(state.state);
     return Number.isFinite(value) ? value : null;
+  }
+
+  _powerNumber(entityId) {
+    const state = this._state(entityId);
+    if (!state) return null;
+    const value = Number(state.state);
+    if (!Number.isFinite(value)) return null;
+    const unit = String(state.attributes?.unit_of_measurement || '').toLowerCase();
+    return unit === 'kw' ? value * 1000 : value;
+  }
+
+  _batteryFlow() {
+    const chargeEntity = this._entity("battery_charge_power");
+    const dischargeEntity = this._entity("battery_discharge_power");
+    const charge = this._powerNumber(chargeEntity);
+    const discharge = this._powerNumber(dischargeEntity);
+
+    if (chargeEntity || dischargeEntity) {
+      const chargeW = charge !== null && charge > 0 ? charge : 0;
+      const dischargeW = discharge !== null && discharge > 0 ? discharge : 0;
+      if (chargeW > 0 && dischargeW <= 0) return { power: chargeW, label: "Laden", direction: "charge", color: "green" };
+      if (dischargeW > 0 && chargeW <= 0) return { power: -dischargeW, label: "Entladen", direction: "discharge", color: "red" };
+      if (chargeW > 0 && dischargeW > 0) {
+        return chargeW >= dischargeW
+          ? { power: chargeW, label: "Laden", direction: "charge", color: "green" }
+          : { power: -dischargeW, label: "Entladen", direction: "discharge", color: "red" };
+      }
+      return { power: 0, label: "Standby", direction: "idle", color: "grey" };
+    }
+
+    const legacy = this._powerNumber(this._entity("battery_power"));
+    if (legacy === null) return { power: null, label: "—", direction: "idle", color: "grey" };
+    if (legacy > 5) return { power: legacy, label: "Laden", direction: "charge", color: "green" };
+    if (legacy < -5) return { power: legacy, label: "Entladen", direction: "discharge", color: "red" };
+    return { power: legacy, label: "Standby", direction: "idle", color: "grey" };
   }
 
   _formatPower(value) {
@@ -508,6 +543,10 @@ class LakisSolarworldDashboard extends HTMLElement {
           filter: none;
           animation: none;
         }
+        .battery-state-green .energy-icon, .battery-state-green .tile-icon { color:#47ff74; filter:drop-shadow(0 0 10px rgba(71,255,116,.65)); }
+        .battery-state-red .energy-icon, .battery-state-red .tile-icon { color:#ff4d5a; filter:drop-shadow(0 0 10px rgba(255,77,90,.55)); }
+        .battery-state-green { border-color:rgba(71,255,116,.72) !important; }
+        .battery-state-red { border-color:rgba(255,77,90,.72) !important; }
         .flow-arrowhead.green {
           fill: #36f28b;
           filter: drop-shadow(0 0 5px rgba(54,242,139,.9));
@@ -1176,13 +1215,13 @@ class LakisSolarworldDashboard extends HTMLElement {
     return active ? `flow-line ${color} active` : "flow-line inactive";
   }
 
-  _renderFlowArrows(pv, grid, battery, wallbox) {
+  _renderFlowArrows(pv, grid, batteryFlow, wallbox) {
     const threshold = 5;
     const pvToHouse = pv !== null && pv > threshold;
     const gridToHouse = grid !== null && grid > threshold;
     const houseToGrid = grid !== null && grid < -threshold;
-    const batteryToHouse = battery !== null && battery < -threshold;
-    const houseToBattery = battery !== null && battery > threshold;
+    const batteryToHouse = batteryFlow.direction === "discharge" && Math.abs(batteryFlow.power || 0) > threshold;
+    const houseToBattery = batteryFlow.direction === "charge" && Math.abs(batteryFlow.power || 0) > threshold;
     const houseToWallbox = wallbox !== null && wallbox > threshold && this._enabled("wallbox");
 
     return `
@@ -1210,18 +1249,19 @@ class LakisSolarworldDashboard extends HTMLElement {
   }
 
   _renderOverview() {
-    const pv = this._number(this._entity("pv_power"));
-    const house = this._number(this._entity("house_power"));
-    const grid = this._number(this._entity("grid_power"));
-    const battery = this._number(this._entity("battery_power"));
+    const pv = this._powerNumber(this._entity("pv_power"));
+    const house = this._powerNumber(this._entity("house_power"));
+    const grid = this._powerNumber(this._entity("grid_power"));
+    const batteryFlow = this._batteryFlow();
+    const battery = batteryFlow.power;
     const soc = this._number(this._entity("battery_soc"));
-    const wallbox = this._number(this._entity("wallbox_power"));
+    const wallbox = this._powerNumber(this._entity("wallbox_power"));
     const heatpump = this._number(this._entity("heatpump_power"));
     const vehicle = this._number(this._entity("vehicle_charging_power"));
     const climate = this._state(this._entity("climate_1"));
     const climateTemp = climate?.attributes?.current_temperature;
     const gridLabel = grid === null ? "—" : (grid < 0 ? "Einspeisung" : "Bezug");
-    const batteryLabel = battery === null ? "—" : (battery > 5 ? "Laden" : battery < -5 ? "Entladen" : "Standby");
+    const batteryLabel = batteryFlow.label;
 
     return `
       <div class="overview-shell">
@@ -1229,7 +1269,7 @@ class LakisSolarworldDashboard extends HTMLElement {
           <div class="flow-card">
             <div class="section-title">${this._icon("bolt",22)} <span>Aktueller Energiefluss</span></div>
             <div class="flow">
-              ${this._renderFlowArrows(pv, grid, battery, wallbox)}
+              ${this._renderFlowArrows(pv, grid, batteryFlow, wallbox)}
               <div class="energy-node pv pv-node visual-node" style="--tile-bg:url('${this._escape(this._backgroundFor("pv"))}')">
                 <div class="energy-icon">${this._icon("solar",40)}</div>
                 <div class="energy-name">PV</div>
@@ -1246,7 +1286,7 @@ class LakisSolarworldDashboard extends HTMLElement {
                 <div class="energy-value">${this._formatPower(house)}</div>
                 <div class="energy-name">Verbrauch</div>
               </div>
-              <div class="energy-node battery battery-node visual-node" style="--tile-bg:url('${this._escape(this._backgroundFor("battery"))}')">
+              <div class="energy-node battery battery-node visual-node battery-state-${batteryFlow.color}" style="--tile-bg:url('${this._escape(this._backgroundFor("battery"))}')">
                 <div class="energy-icon">${this._icon("battery",40)}</div>
                 <div class="energy-name">Batterie</div>
                 <div class="energy-value">${this._formatPercent(soc)}</div>
@@ -1291,7 +1331,7 @@ class LakisSolarworldDashboard extends HTMLElement {
         <div class="visual-tile" ${this._tileStyle("pv")} data-tile-tab="pv">
           <div class="tile-icon">${this._icon("solar",44)}</div><div class="tile-title">PV-Anlage</div><div class="tile-value">${this._formatPower(pv)}</div><div class="tile-meta">Aktuelle Leistung</div>
         </div>
-        <div class="visual-tile" ${this._tileStyle("battery")} data-tile-tab="battery">
+        <div class="visual-tile battery-state-${batteryFlow.color}" ${this._tileStyle("battery")} data-tile-tab="battery">
           <div class="tile-icon">${this._icon("battery",44)}</div><div class="tile-title">Batterie</div><div class="tile-value">${this._formatPercent(soc)}</div><div class="tile-meta">${this._formatPower(battery)} · ${batteryLabel}</div>
         </div>
         ${this._enabled("wallbox") ? `<div class="visual-tile" ${this._tileStyle("wallbox")} data-tile-tab="wallbox"><div class="tile-icon">${this._icon("car",44)}</div><div class="tile-title">Wallbox / Fahrzeug</div><div class="tile-value">${this._formatPower(wallbox)}</div><div class="tile-meta">Ladeleistung · Fahrzeug ${this._formatPercent(this._number(this._entity("vehicle_soc")))}</div></div>` : ""}
@@ -1330,7 +1370,7 @@ class LakisSolarworldDashboard extends HTMLElement {
   }
 
   _renderGrid() {
-    const grid = this._number(this._entity("grid_power"));
+    const grid = this._powerNumber(this._entity("grid_power"));
     return `
       <div class="detail-page">
         <div class="detail-hero" ${this._detailStyle("grid")}>
@@ -1355,7 +1395,8 @@ class LakisSolarworldDashboard extends HTMLElement {
 
   _renderBattery() {
     const soc = this._number(this._entity("battery_soc"));
-    const power = this._number(this._entity("battery_power"));
+    const batteryFlow = this._batteryFlow();
+    const power = batteryFlow.power;
 
     return `
       <div class="detail-page">
@@ -1365,7 +1406,7 @@ class LakisSolarworldDashboard extends HTMLElement {
             <div class="detail-title">Batterie</div>
             <div class="detail-subtitle">Ladezustand und aktuelle Lade-/Entladeleistung</div>
             <div class="detail-value">${this._formatPercent(soc)}</div>
-            <div class="detail-meta">${this._formatPower(power)}</div>
+            <div class="detail-meta battery-state-${batteryFlow.color}">${this._formatPower(power)} · ${batteryFlow.label}</div>
           </div>
           <div class="detail-grid">
             <div class="detail-metric"><div class="detail-metric-label">SOC</div><div class="detail-metric-value">${this._formatPercent(soc)}</div></div>
@@ -1388,7 +1429,9 @@ class LakisSolarworldDashboard extends HTMLElement {
 
         <div class="settings-card full">
           ${this._entitySelect("battery_soc", "Batterie SOC", ["sensor"], "Ladezustand in Prozent.")}
-          ${this._entitySelect("battery_power", "Batterieleistung", ["sensor"], "Positiv = Laden, negativ = Entladen.")}
+          ${this._entitySelect("battery_charge_power", "Batterie Ladeleistung", ["sensor"], "Aktuelle Ladeleistung – grün bei Laden.")}
+          ${this._entitySelect("battery_discharge_power", "Batterie Entladeleistung", ["sensor"], "Aktuelle Entladeleistung – rot bei Entladen.")}
+          ${!this._entity("battery_charge_power") && !this._entity("battery_discharge_power") ? this._entitySelect("battery_power", "Batterieleistung (signiert)", ["sensor"], "Optionaler Fallback: positiv = Laden, negativ = Entladen.") : ""}
         </div>
       </div>
     `;
@@ -1525,7 +1568,9 @@ class LakisSolarworldDashboard extends HTMLElement {
           ${this._entitySelect("pv_power", "PV-Leistung", ["sensor"], "Aktuelle PV-Leistung.")}
           ${this._entitySelect("grid_power", "Netzbezug / Einspeisung", ["sensor"], "Positiv = Bezug, negativ = Einspeisung.")}
           ${this._entitySelect("battery_soc", "Batterie SOC", ["sensor"], "Ladezustand in Prozent.")}
-          ${this._entitySelect("battery_power", "Batterieleistung", ["sensor"], "Positiv = Laden, negativ = Entladen.")}
+          ${this._entitySelect("battery_charge_power", "Batterie Ladeleistung", ["sensor"], "Aktuelle Ladeleistung.")}
+          ${this._entitySelect("battery_discharge_power", "Batterie Entladeleistung", ["sensor"], "Aktuelle Entladeleistung.")}
+          ${!this._entity("battery_charge_power") && !this._entity("battery_discharge_power") ? this._entitySelect("battery_power", "Batterieleistung (signiert)", ["sensor"], "Optionaler Fallback: positiv = Laden, negativ = Entladen.") : ""}
         </div>
 
         ${this._enabled("wallbox") || this._enabled("vehicle") ? `

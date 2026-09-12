@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1015"
+                "lakis-dashboard.js?v=1016"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -360,6 +360,8 @@ def suggest_entities(hass: HomeAssistant) -> dict[str, list[str]]:
         "house_power": [],
         "grid_power": [],
         "battery_power": [],
+        "battery_charge_power": [],
+        "battery_discharge_power": [],
         "battery_soc": [],
         "wallbox_power": [],
         "wallbox_status": [],
@@ -396,6 +398,10 @@ def suggest_entities(hass: HomeAssistant) -> dict[str, list[str]]:
             and unit in ("w", "kw")
         ):
             result["battery_power"].append(state.entity_id)
+            if any(token in text for token in ("charge", "charging", "laden")):
+                result["battery_charge_power"].append(state.entity_id)
+            if any(token in text for token in ("discharge", "discharging", "entladen")):
+                result["battery_discharge_power"].append(state.entity_id)
 
         if (
             ("soc" in text or "state of charge" in text)
