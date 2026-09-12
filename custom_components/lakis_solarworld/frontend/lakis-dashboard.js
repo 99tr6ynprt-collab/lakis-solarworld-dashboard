@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.5.1
+ * Version 1.5.2
  *
  * Design:
  * - black / near-black background
@@ -215,21 +215,21 @@ class LakisSolarworldDashboard extends HTMLElement {
 
   _checkbox(module, label, description = "") {
     const enabled = this._enabled(module);
-
     return `
       <div class="module-switch">
-        <label class="switch-row">
-          <input
-            type="checkbox"
-            data-module="${this._escape(module)}"
-            ${enabled ? "checked" : ""}
-          />
-          <span class="switch-box"></span>
+        <button
+          type="button"
+          class="switch-row"
+          data-module="${this._escape(module)}"
+          aria-pressed="${enabled ? "true" : "false"}"
+          title="${enabled ? "Modul deaktivieren" : "Modul aktivieren"}"
+        >
+          <span class="switch-box ${enabled ? "is-on" : ""}" aria-hidden="true"></span>
           <span class="switch-text">
             <strong>${this._escape(label)}</strong>
             <small>${this._escape(description)}</small>
           </span>
-        </label>
+        </button>
       </div>
     `;
   }
@@ -869,12 +869,12 @@ class LakisSolarworldDashboard extends HTMLElement {
           transition: .2s;
         }
 
-        .switch-row input:checked + .switch-box {
+        .switch-box.is-on {
           background: #00aef3;
           box-shadow: 0 0 16px rgba(0,174,243,.4);
         }
 
-        .switch-row input:checked + .switch-box::after {
+        .switch-box.is-on::after {
           left: 23px;
           background: #fff;
         }
@@ -1816,9 +1816,6 @@ class LakisSolarworldDashboard extends HTMLElement {
         if (this._tab === "settings" && this._dirty) {
           await this._save(true);
         }
-        if (this._moduleSavePromise) {
-          await this._moduleSavePromise;
-        }
         this._tab = button.dataset.tab;
         this._message = "";
         this._render();
@@ -1830,63 +1827,23 @@ class LakisSolarworldDashboard extends HTMLElement {
         if (this._tab === "settings" && this._dirty) {
           await this._save(true);
         }
-        if (this._moduleSavePromise) {
-          await this._moduleSavePromise;
-        }
         this._tab = tile.dataset.tileTab;
         this._message = "";
         this._render();
       });
     });
 
-    this.querySelectorAll("[data-module]").forEach((checkbox) => {
-      checkbox.addEventListener("change", async () => {
-        const module = checkbox.dataset.module;
-        const enabled = checkbox.checked;
+    this.querySelectorAll("[data-module]").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const module = button.dataset.module;
+        const enabled = this._config.modules?.[module] === false;
         this._config.modules ||= {};
-        const previous = this._config.modules[module] !== false;
         this._config.modules[module] = enabled;
-
-        try {
-          // Finish an already running write first. The generic save never
-          // writes the modules block, so it cannot overwrite this dedicated
-          // module update afterwards.
-          if (this._savePromise) {
-            await this._savePromise;
-          }
-          if (this._moduleSavePromise) {
-            await this._moduleSavePromise;
-          }
-
-          this._moduleSavePromise = this._hass.callWS({
-            type: "lakis_solarworld/set_module",
-            entry_id: this._entry,
-            module,
-            enabled,
-          });
-
-          const result = await this._moduleSavePromise;
-          this._moduleSavePromise = null;
-
-          const returned = result?.config || null;
-          if (returned && !this._dirty) {
-            this._config = returned;
-          }
-          // If another setting was changed while the module request was in
-          // flight, keep _dirty=true so that change is still saved.
-          this._message = "✓ Modul gespeichert.";
-          this._render();
-        } catch (err) {
-          this._moduleSavePromise = null;
-          this._config.modules[module] = previous;
-          this._message =
-            "Fehler beim Speichern des Moduls: " +
-            (err?.message || "Unbekannter Fehler");
-          this._render();
-        }
+        this._dirty = true;
+        await this._save(false);
       });
     });
-
     this.querySelectorAll("[data-entity-key]").forEach((select) => {
       select.addEventListener("change", (event) => {
         this._config[event.currentTarget.dataset.entityKey] =
@@ -1951,16 +1908,7 @@ class LakisSolarworldDashboard extends HTMLElement {
       if (!this._dirty) return;
     }
 
-    // Module switches have their own atomic persistence command. Wait for an
-    // in-flight module write, then never send the modules block through the
-    // generic save path.
-    if (this._moduleSavePromise) {
-      await this._moduleSavePromise;
-      if (!this._dirty) return;
-    }
-
     const payload = JSON.parse(JSON.stringify(this._config));
-    delete payload.modules;
 
     this._savePromise = (async () => {
       try {
@@ -2065,7 +2013,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.5.1
+        · Version 1.5.2
       </div>
     `;
   }
