@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.5.8 · DIAGNOSE
+ * Version 1.5.9
  *
  * Design:
  * - black / near-black background
@@ -25,7 +25,6 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._savePromise = null;
     this._moduleSavePromise = null;
     this._moduleEventsAttached = false;
-    this._moduleDiagnosticAttached = false;
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
@@ -74,6 +73,38 @@ class LakisSolarworldDashboard extends HTMLElement {
       });
 
       this._config = result?.config || result || {};
+
+      // Normalize legacy module storage (array = enabled module names)
+      // to the object format used by the current dashboard.
+      const moduleKeys = [
+        "energy",
+        "pv",
+        "grid",
+        "battery",
+        "wallbox",
+        "vehicle",
+        "heatpump",
+        "climate",
+      ];
+      const rawModules = this._config.modules;
+      if (Array.isArray(rawModules)) {
+        const modules = Object.fromEntries(moduleKeys.map((key) => [key, false]));
+        rawModules.forEach((name) => {
+          if (typeof name === "string" && moduleKeys.includes(name)) {
+            modules[name] = true;
+          }
+        });
+        this._config.modules = modules;
+      } else if (!rawModules || typeof rawModules !== "object") {
+        this._config.modules = Object.fromEntries(
+          moduleKeys.map((key) => [key, true])
+        );
+      } else {
+        this._config.modules = Object.fromEntries(
+          moduleKeys.map((key) => [key, rawModules[key] !== false])
+        );
+      }
+
       this._config.backgrounds = {
         overview: "",
         pv: "",
@@ -835,10 +866,6 @@ class LakisSolarworldDashboard extends HTMLElement {
         .module-switch {
           border-bottom: 1px solid rgba(100,150,190,.1);
         }
-
-        .switch-box.diagnostic-pressed {
-  transform: scale(0.92);
-}
 
 .switch-row {
           display: flex;
@@ -1843,16 +1870,11 @@ class LakisSolarworldDashboard extends HTMLElement {
       });
     });
 
-    // DIAGNOSTIC BUILD:
-    // Do not call the backend and do not rerender. Capture pointer/click
-    // events at the custom-element level and show a temporary visible marker.
-    // This isolates event delivery from WebSocket/config-entry handling.
-    if (!this._moduleDiagnosticAttached) {
-      this.addEventListener("pointerdown", this._handleModuleDiagnostic, true);
-      this.addEventListener("pointerup", this._handleModuleDiagnostic, true);
-      this.addEventListener("pointercancel", this._handleModuleDiagnostic, true);
-      this.addEventListener("click", this._handleModuleDiagnostic, true);
-      this._moduleDiagnosticAttached = true;
+    // Module switches use pointerup delegation. Pointer events were verified
+    // on the custom element; the production handler now persists the change.
+    if (!this._moduleEventsAttached) {
+      this.addEventListener("pointerup", this._handleModulePointerUp);
+      this._moduleEventsAttached = true;
     }
 
     this.querySelectorAll("[data-entity-key]").forEach((select) => {
@@ -1897,7 +1919,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     });
   }
 
-  _handleModuleDiagnostic = (event) => {
+  _handleModulePointerUp = async (event) => {
     const target = event.target;
     const button = target?.closest?.("[data-module]");
 
@@ -1906,89 +1928,49 @@ class LakisSolarworldDashboard extends HTMLElement {
     const module = button.dataset.module;
     if (!module) return;
 
-    console.log("LAKIS MODULE DIAGNOSTIC:", event.type, module, target);
+    event.preventDefault();
+    event.stopPropagation();
 
-    let box = button.querySelector(".switch-box");
+    const previous = this._enabled(module);
+    const enabled = !previous;
 
-    if (event.type === "pointerdown") {
-      box?.classList.add("diagnostic-pressed");
-      this._showModuleDiagnostic(`POINTERDOWN erkannt: ${module}`);
-      return;
-    }
+    button.setAttribute("aria-pressed", String(enabled));
+    button.setAttribute(
+      "title",
+      enabled ? "Modul deaktivieren" : "Modul aktivieren"
+    );
+    button.querySelector(".switch-box")?.classList.toggle("is-on", enabled);
 
-    if (event.type === "pointerup") {
-      box?.classList.remove("diagnostic-pressed");
-      const previous = this._enabled(module);
-      const enabled = !previous;
-
-      button.setAttribute("aria-pressed", String(enabled));
-      button.setAttribute(
-        "title",
-        enabled ? "Modul deaktivieren" : "Modul aktivieren"
-      );
-      box?.classList.toggle("is-on", enabled);
-      this._config.modules ||= {};
-      this._config.modules[module] = enabled;
-
-      this._showModuleDiagnostic(
-        `POINTERUP erkannt: ${module} → ${enabled ? "EIN" : "AUS"} (nur Diagnose)`
-      );
-      return;
-    }
-
-    if (event.type === "pointercancel") {
-      box?.classList.remove("diagnostic-pressed");
-      this._showModuleDiagnostic(`POINTERCANCEL erkannt: ${module}`);
-      return;
-    }
-
-    if (event.type === "click") {
-      this._showModuleDiagnostic(`CLICK erkannt: ${module}`);
-    }
-  };
-
-  _showModuleDiagnostic(text) {
-    let el = this.querySelector("[data-module-diagnostic]");
-
-    if (!el) {
-      el = document.createElement("div");
-      el.dataset.moduleDiagnostic = "";
-      Object.assign(el.style, {
-        position: "fixed",
-        left: "10px",
-        right: "10px",
-        bottom: "10px",
-        zIndex: "2147483647",
-        padding: "10px 12px",
-        borderRadius: "8px",
-        background: "#222",
-        color: "#fff",
-        font: "600 14px/1.3 sans-serif",
-        textAlign: "center",
-        pointerEvents: "none",
-        boxSizing: "border-box",
-      });
-      this.appendChild(el);
-    }
-
-    el.textContent = `LAKIS DIAGNOSE · ${text}`;
+    await this._setModule(module, enabled, button, previous);
   };
 
   async _setModule(module, enabled, button, previous) {
     if (!this._hass || !this._entry || !module) return;
 
-    this._config.modules ||= {};
+    if (Array.isArray(this._config.modules)) {
+      const modules = Object.fromEntries(
+        this._config.modules
+          .filter((name) => typeof name === "string" && name)
+          .map((name) => [name, true])
+      );
+      this._config.modules = modules;
+    } else if (!this._config.modules || typeof this._config.modules !== "object") {
+      this._config.modules = {};
+    }
     this._config.modules[module] = enabled;
 
     const request = async () => {
       try {
-        await this._hass.callWS({
+        const result = await this._hass.callWS({
           type: "lakis_solarworld/set_module",
           entry_id: this._entry,
           module,
           enabled,
         });
 
+        if (result?.config) {
+          this._config = { ...this._config, ...result.config };
+        }
         this._config.modules ||= {};
         this._config.modules[module] = enabled;
         this._message = "";
