@@ -24,6 +24,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._saveInFlight = false;
     this._savePromise = null;
     this._moduleSavePromise = null;
+    this._moduleEventsAttached = false;
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
@@ -40,8 +41,6 @@ class LakisSolarworldDashboard extends HTMLElement {
       return;
     }
 
-    // IMPORTANT:
-    // Never rebuild the settings DOM while an iPad <select> is open.
     if (this._tab !== "settings") {
       this._render();
     }
@@ -302,8 +301,6 @@ class LakisSolarworldDashboard extends HTMLElement {
           width: 100%;
         }
 
-        /* Kiosk: make the dashboard host itself occupy the complete viewport.
-           Hiding ha-sidebar alone does not reclaim the layout column on iPad/HA. */
         :host(.kiosk) {
           position: fixed !important;
           inset: 0 !important;
@@ -853,6 +850,8 @@ class LakisSolarworldDashboard extends HTMLElement {
           appearance: none;
           -webkit-appearance: none;
           -webkit-tap-highlight-color: transparent;
+          touch-action: manipulation;
+          pointer-events: auto;
           transition: transform .12s ease, filter .12s ease;
         }
         .switch-row:hover {
@@ -1117,11 +1116,6 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._attachEvents();
     this._rendered = true;
 
-    // Start in Home Assistant Kiosk Mode.
-    // IMPORTANT: Do not use the browser Fullscreen API here. On iPad/Safari
-    // that API can blank the HA panel or create a separate fullscreen layer.
-    // Kiosk Mode only hides the HA sidebar and leaves the dashboard itself
-    // fully rendered.
     if (!this._kioskInitialized) {
       this._kioskInitialized = true;
       setTimeout(() => this._enterKioskMode(), 80);
@@ -1252,14 +1246,10 @@ class LakisSolarworldDashboard extends HTMLElement {
             <path d="M0,0 L8,4 L0,8 z" class="flow-arrowhead red"></path>
           </marker>
         </defs>
-        <!-- PV → Haus -->
         <path class="${this._flowClass(pvToHouse, "green")}" marker-end="url(#lakis-arrow-green)" d="M500 103 C500 122 500 137 500 153"></path>
-        <!-- Haus ↔ Batterie -->
         <path class="${this._flowClass(batteryToHouse, "green")}" marker-end="url(#lakis-arrow-green)" d="M330 182 C385 182 414 182 454 182"></path>
         <path class="${this._flowClass(houseToBattery, "green")}" marker-end="url(#lakis-arrow-green)" d="M454 198 C414 198 385 198 330 198"></path>
-        <!-- Haus ↔ Wallbox -->
         <path class="${this._flowClass(houseToWallbox, "green")}" marker-end="url(#lakis-arrow-green)" d="M546 182 C590 182 620 182 670 182"></path>
-        <!-- Netzbezug / Einspeisung -->
         <path class="${this._flowClass(gridToHouse, "red")}" marker-end="url(#lakis-arrow-red)" d="M500 307 C500 285 500 264 500 240"></path>
         <path class="${this._flowClass(houseToGrid, "green")}" marker-end="url(#lakis-arrow-green)" d="M500 240 C500 264 500 285 500 307"></path>
       </svg>
@@ -1732,9 +1722,6 @@ class LakisSolarworldDashboard extends HTMLElement {
   _setHASidebarHidden(hidden) {
     this._haSidebarHidden = hidden;
 
-    // Only hide the actual HA sidebar. Never hide ha-drawer: on current
-    // Home Assistant/iPad builds the drawer can also own the main panel,
-    // which would make the whole dashboard appear black/empty.
     const sidebars = this._findInShadowRoots('ha-sidebar');
     const unique = [...new Set(sidebars)];
 
@@ -1851,26 +1838,14 @@ class LakisSolarworldDashboard extends HTMLElement {
       });
     });
 
-    this.querySelectorAll("[data-module]").forEach((button) => {
-      button.addEventListener("click", async (event) => {
-        event.preventDefault();
-
-        const module = button.dataset.module;
-        const previous = this._enabled(module);
-        const enabled = !previous;
-
-        // Immediate visual feedback. The DOM is not rebuilt during the touch.
-        button.setAttribute("aria-pressed", String(enabled));
-        button.setAttribute(
-          "title",
-          enabled ? "Modul deaktivieren" : "Modul aktivieren"
-        );
-        const switchBox = button.querySelector(".switch-box");
-        if (switchBox) switchBox.classList.toggle("is-on", enabled);
-
-        await this._setModule(module, enabled, button, previous);
-      });
-    });
+    // VARIANTE B:
+    // Module switches use one delegated listener on the custom element.
+    // The listener survives DOM replacement because it is not attached to
+    // the individual switch buttons.
+    if (!this._moduleEventsAttached) {
+      this.addEventListener("click", this._handleModuleClick);
+      this._moduleEventsAttached = true;
+    }
 
     this.querySelectorAll("[data-entity-key]").forEach((select) => {
       select.addEventListener("change", (event) => {
@@ -1914,6 +1889,40 @@ class LakisSolarworldDashboard extends HTMLElement {
     });
   }
 
+  _handleModuleClick = async (event) => {
+    const button = event.target.closest?.("[data-module]");
+
+    if (!button || !this.contains(button)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const module = button.dataset.module;
+
+    if (!module) {
+      return;
+    }
+
+    const previous = this._enabled(module);
+    const enabled = !previous;
+
+    // Immediate visual feedback.
+    button.setAttribute("aria-pressed", String(enabled));
+    button.setAttribute(
+      "title",
+      enabled ? "Modul deaktivieren" : "Modul aktivieren"
+    );
+
+    const switchBox = button.querySelector(".switch-box");
+    if (switchBox) {
+      switchBox.classList.toggle("is-on", enabled);
+    }
+
+    await this._setModule(module, enabled, button, previous);
+  };
+
   async _setModule(module, enabled, button, previous) {
     if (!this._hass || !this._entry || !module) return;
 
@@ -1929,8 +1938,6 @@ class LakisSolarworldDashboard extends HTMLElement {
           enabled,
         });
 
-        // The backend persisted exactly this module in ConfigEntry.options.
-        // Keep the local state and render once after persistence.
         this._config.modules ||= {};
         this._config.modules[module] = enabled;
         this._message = "";
@@ -1973,15 +1980,11 @@ class LakisSolarworldDashboard extends HTMLElement {
   async _save(silent = false) {
     if (!this._hass || !this._entry) return;
 
-    // Cancel a pending debounce when an explicit save is requested.
     if (this._saveTimer) {
       clearTimeout(this._saveTimer);
       this._saveTimer = null;
     }
 
-    // If another save is already running, wait for it instead of silently
-    // dropping the newer configuration. This is important when leaving the
-    // settings page immediately after changing a module on iPad.
     if (this._savePromise) {
       await this._savePromise;
       if (!this._dirty) return;
@@ -2002,14 +2005,9 @@ class LakisSolarworldDashboard extends HTMLElement {
           config: payload,
         });
 
-        // Only replace the live config with the response when no newer local
-        // changes were made while the request was in flight.
         const returned = result?.config || null;
         if (returned && !this._dirty) this._config = returned;
 
-        // The request contains the complete current configuration snapshot.
-        // If the user changed something while it was in flight, keep dirty=true
-        // so the next save writes the newer state as well.
         const stillSame = JSON.stringify(this._config) === JSON.stringify(payload);
         if (stillSame) this._dirty = false;
 
@@ -2030,8 +2028,6 @@ class LakisSolarworldDashboard extends HTMLElement {
 
     await this._savePromise;
 
-    // A change may have happened while the request was running. Persist it
-    // immediately instead of waiting for another UI action.
     if (this._dirty && !this._savePromise) {
       await this._save(true);
     }
