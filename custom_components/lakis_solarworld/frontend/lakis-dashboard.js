@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.5.6
+ * Version 1.5.7
  *
  * Design:
  * - black / near-black background
@@ -23,6 +23,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._saveTimer = null;
     this._saveInFlight = false;
     this._savePromise = null;
+    this._moduleSavePromise = null;
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
@@ -1862,7 +1863,10 @@ class LakisSolarworldDashboard extends HTMLElement {
 
     const save = this.querySelector("#save-config");
     if (save) {
-      save.addEventListener("click", () => this._save(false));
+      save.addEventListener("click", async () => {
+        if (this._moduleSavePromise) await this._moduleSavePromise;
+        await this._save(false);
+      });
     }
 
     this.querySelectorAll("[data-background-input]").forEach((input) => {
@@ -1903,6 +1907,12 @@ class LakisSolarworldDashboard extends HTMLElement {
           this._config.modules ||= {};
           this._config.modules[module] = enabled;
         }
+
+        // The module is persisted independently. Re-render only after the
+        // atomic request has completed so the tabs/cards reflect the new
+        // module state immediately.
+        this._message = "";
+        this._render();
       } catch (err) {
         this._config.modules ||= {};
         this._config.modules[module] = previous;
@@ -2051,7 +2061,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.5.6
+        · Version 1.5.7
       </div>
     `;
   }
