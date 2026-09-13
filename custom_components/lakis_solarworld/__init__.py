@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from homeassistant.helpers import config_validation as cv
 
 DOMAIN = "lakis_solarworld"
 PLATFORMS: list[str] = []
+
+_LOGGER = logging.getLogger(__name__)
 
 LICENSE_DATA_KEYS = {
     "license_key",
@@ -212,12 +215,6 @@ def _register_websocket(hass: HomeAssistant) -> None:
 
         merged_data = dict(entry.data)
         merged_data.update(new_data)
-
-        # Preserve the existing ConfigEntry options and merge the incoming
-        # configuration into them. This is the same persistent storage path
-        # used by the working entity settings. In particular, a module value
-        # that is already stored must never disappear because a later save was
-        # created from a stale frontend snapshot.
         merged_options = dict(entry.options)
         merged_options.update(new_options)
 
@@ -227,9 +224,6 @@ def _register_websocket(hass: HomeAssistant) -> None:
             options=merged_options,
         )
 
-        # Build the response from the exact merged snapshots instead of
-        # immediately reading the ConfigEntry again. This avoids returning a
-        # stale options object while Home Assistant schedules the persistence.
         updated_config = dict(merged_data)
         updated_config.update(merged_options)
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = updated_config
@@ -249,34 +243,80 @@ def _register_websocket(hass: HomeAssistant) -> None:
     )
     @websocket_api.async_response
     async def set_module(hass, connection, msg):
-        entry = _get_entry(hass, msg["entry_id"])
-        module = msg["module"]
-        enabled = bool(msg["enabled"])
+        """Persist one module toggle and expose the real backend error if it fails."""
+        try:
+            entry = _get_entry(hass, msg["entry_id"])
+            module = msg["module"]
+            enabled = bool(msg["enabled"])
 
-        modules = dict(entry.options.get("modules") or {})
-        modules[module] = enabled
+            raw_modules = entry.options.get("modules")
+            if raw_modules is None:
+                modules: dict[str, bool] = {}
+            elif isinstance(raw_modules, dict):
+                modules = dict(raw_modules)
+            else:
+                raise HomeAssistantError(
+                    f"Invalid stored modules type: {type(raw_modules).__name__}"
+                )
 
-        new_options = dict(entry.options)
-        new_options["modules"] = modules
+            modules[module] = enabled
 
-        hass.config_entries.async_update_entry(
-            entry,
-            options=new_options,
-        )
+            new_options = dict(entry.options)
+            new_options["modules"] = modules
 
-        updated_config = dict(entry.data)
-        updated_config.update(new_options)
-        hass.data.setdefault(DOMAIN, {})[entry.entry_id] = updated_config
+            _LOGGER.warning(
+                "LAKIS set_module: entry=%s module=%s enabled=%s before=%s after=%s",
+                entry.entry_id,
+                module,
+                enabled,
+                raw_modules,
+                modules,
+            )
 
-        connection.send_result(
-            msg["id"],
-            {
-                "ok": True,
-                "config": updated_config,
-                "module": module,
-                "enabled": enabled,
-            },
-        )
+            hass.config_entries.async_update_entry(
+                entry,
+                options=new_options,
+            )
+
+            updated_config = dict(entry.data)
+            updated_config.update(new_options)
+            hass.data.setdefault(DOMAIN, {})[entry.entry_id] = updated_config
+
+            connection.send_result(
+                msg["id"],
+                {
+                    "ok": True,
+                    "config": updated_config,
+                    "module": module,
+                    "enabled": enabled,
+                },
+            )
+
+            _LOGGER.warning(
+                "LAKIS set_module SUCCESS: module=%s enabled=%s",
+                module,
+                enabled,
+            )
+
+        except HomeAssistantError as err:
+            _LOGGER.exception(
+                "LAKIS set_module HomeAssistantError: %s",
+                err,
+            )
+            connection.send_error(
+                msg["id"],
+                "set_module_failed",
+                str(err),
+            )
+        except Exception as err:
+            _LOGGER.exception(
+                "LAKIS set_module unexpected error",
+            )
+            connection.send_error(
+                msg["id"],
+                "set_module_exception",
+                f"{type(err).__name__}: {err}",
+            )
 
     @websocket_api.websocket_command(
         {
@@ -379,7 +419,6 @@ def _register_websocket(hass: HomeAssistant) -> None:
                     old_url.replace("/local/", "").replace("/", "/")
                 )
             )
-            # Delete only files inside the expected background directory.
             background_dir = Path(hass.config.path("www/lakis_solarworld/backgrounds"))
             if old_path.parent == background_dir and old_path.exists():
                 try:
