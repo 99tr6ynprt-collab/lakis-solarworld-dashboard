@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.5.7
+ * Version 1.5.8
  *
  * Design:
  * - black / near-black background
@@ -215,21 +215,22 @@ class LakisSolarworldDashboard extends HTMLElement {
 
   _checkbox(module, label, description = "") {
     const enabled = this._enabled(module);
-
     return `
       <div class="module-switch">
-        <label class="switch-row">
-          <input
-            type="checkbox"
-            data-module="${this._escape(module)}"
-            ${enabled ? "checked" : ""}
-          />
-          <span class="switch-box"></span>
+        <button
+          type="button"
+          class="switch-row"
+          data-module="${this._escape(module)}"
+          aria-pressed="${enabled ? "true" : "false"}"
+          aria-label="${this._escape(label)}"
+          title="${enabled ? "Modul deaktivieren" : "Modul aktivieren"}"
+        >
+          <span class="switch-box ${enabled ? "is-on" : ""}" aria-hidden="true"></span>
           <span class="switch-text">
             <strong>${this._escape(label)}</strong>
             <small>${this._escape(description)}</small>
           </span>
-        </label>
+        </button>
       </div>
     `;
   }
@@ -841,11 +842,26 @@ class LakisSolarworldDashboard extends HTMLElement {
           display: flex;
           align-items: center;
           gap: 13px;
+          width: 100%;
           padding: 13px 0;
           cursor: pointer;
+          border: 0;
+          background: transparent;
+          color: inherit;
+          text-align: left;
+          font: inherit;
+          appearance: none;
+          -webkit-appearance: none;
+          -webkit-tap-highlight-color: transparent;
+          transition: transform .12s ease, filter .12s ease;
         }
-
-        .switch-row input { display: none; }
+        .switch-row:hover {
+          filter: brightness(1.08);
+        }
+        .switch-row:active {
+          transform: scale(.985);
+          filter: brightness(1.16);
+        }
 
         .switch-box {
           width: 44px;
@@ -869,12 +885,12 @@ class LakisSolarworldDashboard extends HTMLElement {
           transition: .2s;
         }
 
-        .switch-row input:checked + .switch-box {
+        .switch-box.is-on {
           background: #00aef3;
           box-shadow: 0 0 16px rgba(0,174,243,.4);
         }
 
-        .switch-row input:checked + .switch-box::after {
+        .switch-box.is-on::after {
           left: 23px;
           background: #fff;
         }
@@ -1835,11 +1851,24 @@ class LakisSolarworldDashboard extends HTMLElement {
       });
     });
 
-    this.querySelectorAll("[data-module]").forEach((checkbox) => {
-      checkbox.addEventListener("change", async () => {
-        const module = checkbox.dataset.module;
-        const enabled = checkbox.checked;
-        await this._setModule(module, enabled, checkbox);
+    this.querySelectorAll("[data-module]").forEach((button) => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+
+        const module = button.dataset.module;
+        const previous = this._enabled(module);
+        const enabled = !previous;
+
+        // Immediate visual feedback. The DOM is not rebuilt during the touch.
+        button.setAttribute("aria-pressed", String(enabled));
+        button.setAttribute(
+          "title",
+          enabled ? "Modul deaktivieren" : "Modul aktivieren"
+        );
+        const switchBox = button.querySelector(".switch-box");
+        if (switchBox) switchBox.classList.toggle("is-on", enabled);
+
+        await this._setModule(module, enabled, button, previous);
       });
     });
 
@@ -1885,38 +1914,41 @@ class LakisSolarworldDashboard extends HTMLElement {
     });
   }
 
-  async _setModule(module, enabled, checkbox) {
+  async _setModule(module, enabled, button, previous) {
     if (!this._hass || !this._entry || !module) return;
 
-    const previous = this._enabled(module);
     this._config.modules ||= {};
     this._config.modules[module] = enabled;
 
     const request = async () => {
       try {
-        const result = await this._hass.callWS({
+        await this._hass.callWS({
           type: "lakis_solarworld/set_module",
           entry_id: this._entry,
           module,
           enabled,
         });
 
-        if (result?.config) {
-          this._config = result.config;
-        } else {
-          this._config.modules ||= {};
-          this._config.modules[module] = enabled;
-        }
-
-        // The module is persisted independently. Re-render only after the
-        // atomic request has completed so the tabs/cards reflect the new
-        // module state immediately.
+        // The backend persisted exactly this module in ConfigEntry.options.
+        // Keep the local state and render once after persistence.
+        this._config.modules ||= {};
+        this._config.modules[module] = enabled;
         this._message = "";
         this._render();
       } catch (err) {
         this._config.modules ||= {};
         this._config.modules[module] = previous;
-        if (checkbox) checkbox.checked = previous;
+
+        if (button) {
+          button.setAttribute("aria-pressed", String(previous));
+          button.setAttribute(
+            "title",
+            previous ? "Modul deaktivieren" : "Modul aktivieren"
+          );
+          const switchBox = button.querySelector(".switch-box");
+          if (switchBox) switchBox.classList.toggle("is-on", previous);
+        }
+
         console.error("LAKIS SOLARWORLD module save:", err);
         this._message =
           "Modul konnte nicht gespeichert werden: " +
@@ -2061,7 +2093,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.5.7
+        · Version 1.5.8
       </div>
     `;
   }
