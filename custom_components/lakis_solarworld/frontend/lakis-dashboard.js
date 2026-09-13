@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.5.5
+ * Version 1.5.6
  *
  * Design:
  * - black / near-black background
@@ -2051,7 +2051,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     return `
       <div class="footer">
         LAKIS SOLARWORLD — Nachhaltige Energie. Für heute. Für morgen.
-        · Version 1.5.5
+        · Version 1.5.6
       </div>
     `;
   }

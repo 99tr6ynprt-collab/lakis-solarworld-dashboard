@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path="lakis-solarworld",
             module_url=(
                 "/api/lakis_solarworld/static/"
-                "lakis-dashboard.js?v=1025"
+                "lakis-dashboard.js?v=1026"
             ),
             sidebar_title="LAKIS SOLARWORLD",
             sidebar_icon="mdi:solar-power",
@@ -402,6 +402,7 @@ def _register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, upload_vehicle_image)
     websocket_api.async_register_command(hass, upload_background_image)
     websocket_api.async_register_command(hass, reset_background)
+    websocket_api.async_register_command(hass, set_module)
 
 
 def suggest_entities(hass: HomeAssistant) -> dict[str, list[str]]:
