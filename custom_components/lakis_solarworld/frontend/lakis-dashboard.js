@@ -1,6 +1,6 @@
 /* LAKIS SOLARWORLD Dashboard
  * Dashboard UI
- * Version 1.5.8
+ * Version 1.5.8 · DIAGNOSE
  *
  * Design:
  * - black / near-black background
@@ -25,6 +25,7 @@ class LakisSolarworldDashboard extends HTMLElement {
     this._savePromise = null;
     this._moduleSavePromise = null;
     this._moduleEventsAttached = false;
+    this._moduleDiagnosticAttached = false;
     this._dirty = false;
     this._haSidebarHidden = false;
     this._haSidebarTargets = [];
@@ -835,7 +836,11 @@ class LakisSolarworldDashboard extends HTMLElement {
           border-bottom: 1px solid rgba(100,150,190,.1);
         }
 
-        .switch-row {
+        .switch-box.diagnostic-pressed {
+  transform: scale(0.92);
+}
+
+.switch-row {
           display: flex;
           align-items: center;
           gap: 13px;
@@ -1838,13 +1843,16 @@ class LakisSolarworldDashboard extends HTMLElement {
       });
     });
 
-    // VARIANTE B:
-    // Module switches use one delegated listener on the custom element.
-    // The listener survives DOM replacement because it is not attached to
-    // the individual switch buttons.
-    if (!this._moduleEventsAttached) {
-      this.addEventListener("click", this._handleModuleClick);
-      this._moduleEventsAttached = true;
+    // DIAGNOSTIC BUILD:
+    // Do not call the backend and do not rerender. Capture pointer/click
+    // events at the custom-element level and show a temporary visible marker.
+    // This isolates event delivery from WebSocket/config-entry handling.
+    if (!this._moduleDiagnosticAttached) {
+      this.addEventListener("pointerdown", this._handleModuleDiagnostic, true);
+      this.addEventListener("pointerup", this._handleModuleDiagnostic, true);
+      this.addEventListener("pointercancel", this._handleModuleDiagnostic, true);
+      this.addEventListener("click", this._handleModuleDiagnostic, true);
+      this._moduleDiagnosticAttached = true;
     }
 
     this.querySelectorAll("[data-entity-key]").forEach((select) => {
@@ -1889,38 +1897,81 @@ class LakisSolarworldDashboard extends HTMLElement {
     });
   }
 
-  _handleModuleClick = async (event) => {
-    const button = event.target.closest?.("[data-module]");
+  _handleModuleDiagnostic = (event) => {
+    const target = event.target;
+    const button = target?.closest?.("[data-module]");
 
-    if (!button || !this.contains(button)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
+    if (!button || !this.contains(button)) return;
 
     const module = button.dataset.module;
+    if (!module) return;
 
-    if (!module) {
+    console.log("LAKIS MODULE DIAGNOSTIC:", event.type, module, target);
+
+    let box = button.querySelector(".switch-box");
+
+    if (event.type === "pointerdown") {
+      box?.classList.add("diagnostic-pressed");
+      this._showModuleDiagnostic(`POINTERDOWN erkannt: ${module}`);
       return;
     }
 
-    const previous = this._enabled(module);
-    const enabled = !previous;
+    if (event.type === "pointerup") {
+      box?.classList.remove("diagnostic-pressed");
+      const previous = this._enabled(module);
+      const enabled = !previous;
 
-    // Immediate visual feedback.
-    button.setAttribute("aria-pressed", String(enabled));
-    button.setAttribute(
-      "title",
-      enabled ? "Modul deaktivieren" : "Modul aktivieren"
-    );
+      button.setAttribute("aria-pressed", String(enabled));
+      button.setAttribute(
+        "title",
+        enabled ? "Modul deaktivieren" : "Modul aktivieren"
+      );
+      box?.classList.toggle("is-on", enabled);
+      this._config.modules ||= {};
+      this._config.modules[module] = enabled;
 
-    const switchBox = button.querySelector(".switch-box");
-    if (switchBox) {
-      switchBox.classList.toggle("is-on", enabled);
+      this._showModuleDiagnostic(
+        `POINTERUP erkannt: ${module} → ${enabled ? "EIN" : "AUS"} (nur Diagnose)`
+      );
+      return;
     }
 
-    await this._setModule(module, enabled, button, previous);
+    if (event.type === "pointercancel") {
+      box?.classList.remove("diagnostic-pressed");
+      this._showModuleDiagnostic(`POINTERCANCEL erkannt: ${module}`);
+      return;
+    }
+
+    if (event.type === "click") {
+      this._showModuleDiagnostic(`CLICK erkannt: ${module}`);
+    }
+  };
+
+  _showModuleDiagnostic(text) {
+    let el = this.querySelector("[data-module-diagnostic]");
+
+    if (!el) {
+      el = document.createElement("div");
+      el.dataset.moduleDiagnostic = "";
+      Object.assign(el.style, {
+        position: "fixed",
+        left: "10px",
+        right: "10px",
+        bottom: "10px",
+        zIndex: "2147483647",
+        padding: "10px 12px",
+        borderRadius: "8px",
+        background: "#222",
+        color: "#fff",
+        font: "600 14px/1.3 sans-serif",
+        textAlign: "center",
+        pointerEvents: "none",
+        boxSizing: "border-box",
+      });
+      this.appendChild(el);
+    }
+
+    el.textContent = `LAKIS DIAGNOSE · ${text}`;
   };
 
   async _setModule(module, enabled, button, previous) {
