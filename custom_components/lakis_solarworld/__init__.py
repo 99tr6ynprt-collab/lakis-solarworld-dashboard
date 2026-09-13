@@ -250,10 +250,6 @@ def _register_websocket(hass: HomeAssistant) -> None:
             enabled = bool(msg["enabled"])
 
             raw_modules = entry.options.get("modules")
-
-            # Older/stored configurations may contain the module state as a
-            # list of enabled module names instead of the current dictionary
-            # format. Normalize that legacy format before applying the toggle.
             if raw_modules is None:
                 modules: dict[str, bool] = {}
             elif isinstance(raw_modules, dict):
